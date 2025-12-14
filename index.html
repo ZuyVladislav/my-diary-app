@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Мой дневник</title>
+</head>
+<body>
+  <h1>Мой дневник</h1>
+
+  <button id="login">Войти через Яндекс</button>
+
+  <div id="app" style="display:none;">
+    <textarea rows="10" cols="40" placeholder="Моя запись..."></textarea>
+    <br />
+    <button>Сохранить</button>
+  </div>
+
+  <script>
+    document.getElementById('login').onclick = () => {
+      alert('Здесь позже будет вход через Яндекс ID');
+      document.getElementById('app').style.display = 'block';
+    };
+  </script>
+</body>
+</html>
