@@ -1,3 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Дневник занятий</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    /* чтобы hidden работал даже если Tailwind не загрузился */
+    .hidden { display: none !important; }
+
+    /* твои кастомные классы */
+    .glass { backdrop-filter: blur(10px); background: rgba(255,255,255,.72); }
+    .shadow-soft { box-shadow: 0 10px 30px rgba(0,0,0,.10); }
+    .focus-ring:focus { outline: none; box-shadow: 0 0 0 4px rgba(99,102,241,.25); border-color: rgba(99,102,241,.85); }
+    .mono { font-variant-numeric: tabular-nums; }
+    .linkish { text-decoration: underline; text-underline-offset: 3px; }
+  </style>
+</head>
+
 <body class="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-fuchsia-50 text-slate-900">
 
   <!-- Auth gate (СНАРУЖИ appRoot) -->
@@ -1050,4 +1072,5 @@ fileImport.addEventListener("change", async () => {
 });
 </script>
 </body>
+  </html>
 </html>
