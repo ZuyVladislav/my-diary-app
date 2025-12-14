@@ -1,21 +1,45 @@
-<script>
-  const CLIENT_ID = "e52fce785062421ea39ccb701f91567";
-  const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/callback.html";
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Мой дневник</title>
+</head>
+<body>
+  <h1>Мой дневник</h1>
 
-  function randomState() {
-    return crypto.getRandomValues(new Uint32Array(4)).join("-");
-  }
+  <button id="login">Войти через Яндекс</button>
 
-  document.getElementById("login").onclick = () => {
-    const state = randomState();
-    localStorage.setItem("yandex_oauth_state", state);
+  <div id="app" style="display:none; margin-top: 10px;">
+    <textarea id="diary" rows="10" cols="40" placeholder="Моя запись..."></textarea>
+    <br />
+    <button id="save">Сохранить</button>
+  </div>
 
-    const url = new URL("https://oauth.yandex.ru/authorize");
-    url.searchParams.set("response_type", "code");
-    url.searchParams.set("client_id", CLIENT_ID);
-    url.searchParams.set("redirect_uri", REDIRECT_URI);
-    url.searchParams.set("state", state);
+  <script>
+    const CLIENT_ID = "e52fce785062421ea39ccb701f91567";
+    const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/callback.html";
 
-    window.location.href = url.toString();
-  };
-</script>
+    function randomState() {
+      return crypto.getRandomValues(new Uint32Array(4)).join("-");
+    }
+
+    document.getElementById("login").onclick = () => {
+      const state = randomState();
+      localStorage.setItem("yandex_oauth_state", state);
+
+      const url = new URL("https://oauth.yandex.ru/authorize");
+      url.searchParams.set("response_type", "code");
+      url.searchParams.set("client_id", CLIENT_ID);
+      url.searchParams.set("redirect_uri", REDIRECT_URI);
+      url.searchParams.set("state", state);
+
+      location.href = url.toString();
+    };
+
+    // просто показать интерфейс после входа (пока условно)
+    const hasCode = !!localStorage.getItem("yandex_oauth_code");
+    if (hasCode) document.getElementById("app").style.display = "block";
+  </script>
+</body>
+</html>
