@@ -3,27 +3,38 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Авторизация…</title>
+  <title>Callback</title>
 </head>
 <body>
 <pre id="out"></pre>
 <script>
   const out = document.getElementById("out");
-  out.textContent = "FULL URL:\n" + location.href + "\n\nSEARCH:\n" + location.search;
-
   const params = new URLSearchParams(location.search);
-  const code = params.get("code");
-  const error = params.get("error");
-  const errorDesc = params.get("error_description");
 
-  if (code) {
-    localStorage.setItem("yandex_oauth_code", code);
-    out.textContent += "\n\n✅ CODE RECEIVED:\n" + code + "\n\nRedirecting…";
-    location.href = "./";
-  } else if (error) {
-    out.textContent += "\n\n❌ OAUTH ERROR:\n" + error + "\n" + (errorDesc || "");
+  const code  = params.get("code");
+  const state = params.get("state");
+  const err   = params.get("error");
+  const desc  = params.get("error_description");
+
+  const savedState = localStorage.getItem("yandex_oauth_state");
+
+  out.textContent =
+    "URL: " + location.href + "\n\n" +
+    "code=" + code + "\n" +
+    "state=" + state + "\n" +
+    "savedState=" + savedState + "\n" +
+    "error=" + err + "\n" +
+    "error_description=" + desc + "\n";
+
+  if (err) {
+    out.textContent += "\n\n❌ OAuth error";
+  } else if (!code) {
+    out.textContent += "\n\n❌ code не получен";
+  } else if (!state || state !== savedState) {
+    out.textContent += "\n\n❌ state не совпал (возможен блок/срыв редиректа)";
   } else {
-    out.textContent += "\n\n❌ No code and no error — пришли на callback без параметров.";
+    localStorage.setItem("yandex_oauth_code", code);
+    out.textContent += "\n\n✅ OK: code сохранён. Теперь можно вернуться в приложение.";
   }
 </script>
 </body>
