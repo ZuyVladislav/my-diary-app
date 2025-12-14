@@ -6,17 +6,24 @@
   <title>Авторизация…</title>
 </head>
 <body>
+<pre id="out"></pre>
 <script>
-  const params = new URLSearchParams(window.location.search);
+  const out = document.getElementById("out");
+  out.textContent = "FULL URL:\n" + location.href + "\n\nSEARCH:\n" + location.search;
+
+  const params = new URLSearchParams(location.search);
   const code = params.get("code");
-  const state = params.get("state");
+  const error = params.get("error");
+  const errorDesc = params.get("error_description");
 
   if (code) {
     localStorage.setItem("yandex_oauth_code", code);
-if (state) localStorage.setItem("yandex_oauth_state", state);
-    window.location.href = "https://zuyvladislav.github.io/my-diary-app/";
+    out.textContent += "\n\n✅ CODE RECEIVED:\n" + code + "\n\nRedirecting…";
+    location.href = "./";
+  } else if (error) {
+    out.textContent += "\n\n❌ OAUTH ERROR:\n" + error + "\n" + (errorDesc || "");
   } else {
-    document.body.innerText = "Ошибка авторизации: code не получен";
+    out.textContent += "\n\n❌ No code and no error — пришли на callback без параметров.";
   }
 </script>
 </body>
