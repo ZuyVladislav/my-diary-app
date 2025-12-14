@@ -41,6 +41,22 @@
     // просто показать интерфейс после входа (пока условно)
     const hasCode = !!localStorage.getItem("yandex_oauth_code");
     if (hasCode) document.getElementById("app").style.display = "block";
+    function renderAuth() {
+  const code = localStorage.getItem("yandex_oauth_code");
+  const app = document.getElementById("app");
+  const loginBtn = document.getElementById("login");
+
+  if (code) {
+    app.style.display = "block";
+    loginBtn.style.display = "none";
+  } else {
+    app.style.display = "none";
+    loginBtn.style.display = "inline-block";
+  }
+}
+
+renderAuth();
+
   </script>
 </body>
 </html>
