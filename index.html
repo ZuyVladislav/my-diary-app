@@ -1,26 +1,21 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Мой дневник</title>
-</head>
-<body>
-  <h1>Мой дневник</h1>
+<script>
+  const CLIENT_ID = "e52fce785062421ea39ccb701f91567";
+  const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/callback.html";
 
-  <button id="login">Войти через Яндекс</button>
+  function randomState() {
+    return crypto.getRandomValues(new Uint32Array(4)).join("-");
+  }
 
-  <div id="app" style="display:none;">
-    <textarea rows="10" cols="40" placeholder="Моя запись..."></textarea>
-    <br />
-    <button>Сохранить</button>
-  </div>
+  document.getElementById("login").onclick = () => {
+    const state = randomState();
+    localStorage.setItem("yandex_oauth_state", state);
 
-  <script>
-    document.getElementById('login').onclick = () => {
-      alert('Здесь позже будет вход через Яндекс ID');
-      document.getElementById('app').style.display = 'block';
-    };
-  </script>
-</body>
-</html>
+    const url = new URL("https://oauth.yandex.ru/authorize");
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("client_id", CLIENT_ID);
+    url.searchParams.set("redirect_uri", REDIRECT_URI);
+    url.searchParams.set("state", state);
+
+    window.location.href = url.toString();
+  };
+</script>
