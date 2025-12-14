@@ -1,62 +1,1072 @@
-<!DOCTYPE html>
+<!-- Auth gate -->
+<div id="authGate" class="max-w-6xl mx-auto px-4 py-8">
+  <div class="glass rounded-2xl border border-white/60 shadow-soft p-6">
+    <h2 class="text-2xl font-semibold">Вход</h2>
+    <p class="mt-2 text-slate-600">
+      Чтобы открыть дневник, войди через Яндекс.
+    </p>
+
+    <div class="mt-4 flex flex-wrap gap-2">
+      <button id="btnLoginYandex"
+        class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft">
+        Войти через Яндекс
+      </button>
+
+      <button id="btnDevSkip"
+        class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
+        Пропустить (локально)
+      </button>
+    </div>
+
+    <div class="mt-3 text-xs text-slate-500">
+      Debug: <span id="authDebug" class="mono"></span>
+    </div>
+  </div>
+</div>
+
+
+<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Мой дневник</title>
+  <title>Дневник занятий</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    .glass { backdrop-filter: blur(10px); background: rgba(255,255,255,.72); }
+    .shadow-soft { box-shadow: 0 10px 30px rgba(0,0,0,.10); }
+    .focus-ring:focus { outline: none; box-shadow: 0 0 0 4px rgba(99,102,241,.25); border-color: rgba(99,102,241,.85); }
+    .mono { font-variant-numeric: tabular-nums; }
+    .linkish { text-decoration: underline; text-underline-offset: 3px; }
+  </style>
 </head>
-<body>
-  <h1>Мой дневник</h1>
 
-  <button id="login">Войти через Яндекс</button>
+<body class="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-fuchsia-50 text-slate-900">
+  <div id="appRoot" class="max-w-6xl mx-auto px-4 py-8">
+    <div id="appRoot" class="hidden max-w-6xl mx-auto px-4 py-8">
 
-  <div id="app" style="display:none; margin-top: 10px;">
-    <textarea id="diary" rows="10" cols="40" placeholder="Моя запись..."></textarea>
-    <br />
-    <button id="save">Сохранить</button>
+
+    <!-- Header -->
+    <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div>
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Электронный дневник занятий</h1>
+      </div>
+
+      <div class="flex flex-wrap gap-2">
+        <button id="btnManageStudents"
+          class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
+          👤 Ученики
+        </button>
+        <button id="btnManageBooks"
+          class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
+          📘 Учебники (PDF)
+        </button>
+        <button id="btnExport"
+          class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft">
+          ⬇️ Экспорт
+        </button>
+        <label class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft cursor-pointer">
+          ⬆️ Импорт
+          <input id="fileImport" type="file" accept="application/json" class="hidden">
+        </label>
+      </div>
+    </div>
+
+    <!-- Add lesson -->
+    <div class="mt-6 glass rounded-2xl border border-white/60 shadow-soft p-5">
+      <div class="flex items-center justify-between gap-3">
+        <h2 class="text-xl font-semibold">Добавить занятие</h2>
+        <div class="text-xs text-slate-500">Автосохранение: <span class="font-medium text-slate-700">включено</span></div>
+      </div>
+
+      <form id="lessonForm" class="mt-4 grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div class="md:col-span-3">
+          <label class="text-sm text-slate-700">Ученик</label>
+          <select id="studentSelect" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring"></select>
+        </div>
+
+        <div class="md:col-span-3">
+          <label class="text-sm text-slate-700">Учебник</label>
+          <select id="bookSelect" class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring"></select>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="text-sm text-slate-700">Дата</label>
+          <input id="dateInput" type="date"
+                 class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring mono"/>
+        </div>
+
+        <div class="md:col-span-4">
+          <label class="text-sm text-slate-700">Домашнее задание</label>
+          <input id="hwInput" type="text" placeholder="Например: стр. 25 упр. 3–5"
+                 class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring"/>
+        </div>
+
+        <div class="md:col-span-10">
+          <label class="text-sm text-slate-700">На чем остановились</label>
+          <input id="stopInput" type="text" placeholder="Например: Past Simple, правила + практика"
+                 class="w-full mt-1 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring"/>
+        </div>
+
+        <div class="md:col-span-2 flex items-end">
+          <button type="submit"
+            class="w-full px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-soft">
+            ➕ Добавить
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- History -->
+    <div class="mt-6 glass rounded-2xl border border-white/60 shadow-soft p-5">
+      <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <h2 class="text-xl font-semibold">История занятий</h2>
+
+        <div class="flex flex-col md:flex-row gap-2 md:items-center">
+          <select id="filterStudent" class="px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring">
+            <option value="">Все ученики</option>
+          </select>
+
+          <div class="flex items-center gap-2">
+            <input id="filterDate" type="date"
+                   class="px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring mono"
+                   title="Фильтр по дате" />
+            <button id="btnClearDate" type="button"
+              class="px-3 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft"
+              title="Сбросить дату">
+              ✖
+            </button>
+          </div>
+
+          <input id="filterQuery" type="text" placeholder="Поиск по ДЗ/остановились…"
+                 class="px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring"/>
+
+          <button id="btnClearAll" type="button"
+            class="px-4 py-2 rounded-xl bg-white/80 border border-rose-200 text-rose-700 hover:bg-white shadow-soft">
+            🧹 Очистить историю
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-slate-600">
+              <th class="py-2 pr-3">Дата</th>
+              <th class="py-2 pr-3">Ученик</th>
+              <th class="py-2 pr-3">Учебник</th>
+              <th class="py-2 pr-3">Домашнее задание</th>
+              <th class="py-2 pr-3">На чем остановились</th>
+              <th class="py-2 pr-0 text-right">Действия</th>
+            </tr>
+          </thead>
+          <tbody id="lessonsTbody" class="align-top"></tbody>
+        </table>
+      </div>
+
+      <div id="emptyState" class="hidden mt-6 text-center text-slate-600">
+        <div class="text-5xl">🗂️</div>
+        <div class="mt-2 font-medium">Пока нет записей</div>
+        <div class="text-sm">Добавь первое занятие — и оно появится в истории.</div>
+      </div>
+    </div>
   </div>
 
-  <script>
-    const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
-    const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/callback.html";
+  <!-- Modal -->
+  <div id="modalBackdrop" class="hidden fixed inset-0 bg-black/30 p-4">
+    <div class="max-w-5xl w-full mx-auto mt-10 glass rounded-2xl border border-white/60 shadow-soft overflow-hidden">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-white/60">
+        <div>
+          <div id="modalTitle" class="text-lg font-semibold">Управление</div>
+          <div id="modalSubtitle" class="text-sm text-slate-600">Добавляй/редактируй/удаляй</div>
+        </div>
+        <button id="modalClose" type="button" class="px-3 py-1 rounded-xl hover:bg-white relative z-10">✖</button>
+      </div>
 
-    function randomState() {
-      return crypto.getRandomValues(new Uint32Array(4)).join("-");
-    }
+      <!-- Add area -->
+      <div class="rounded-2xl border border-white/60 bg-white/55 p-4">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+          <div class="lg:col-span-5">
+            <label class="block text-xs font-medium text-slate-700 mb-1">Название</label>
+            <input id="modalNewName" type="text" placeholder="Например: Иван Иванов / Begegnungen B1.2"
+              class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white focus-ring"/>
+          </div>
 
-    document.getElementById("login").onclick = () => {
-      const state = randomState();
-      localStorage.setItem("yandex_oauth_state", state);
+          <div id="modalPdfArea" class="lg:col-span-5 hidden">
+            <label class="block text-xs font-medium text-slate-700 mb-1">PDF (рядом с diary.html)</label>
+            <div class="flex gap-2">
+              <input id="modalNewPdfLabel" disabled
+                class="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 truncate"
+                value="PDF не выбран"/>
 
-      const url = new URL("https://oauth.yandex.ru/authorize");
-      url.searchParams.set("response_type", "code");
-      url.searchParams.set("client_id", CLIENT_ID);
-      url.searchParams.set("redirect_uri", REDIRECT_URI);
-      url.searchParams.set("scope", "cloud_api:disk.app_folder");
-      url.searchParams.set("state", state);
+              <label class="shrink-0 px-3 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 shadow-soft cursor-pointer whitespace-nowrap">
+                📎 Выбрать
+                <input id="modalNewPdfPick" type="file" accept="application/pdf" class="hidden">
+              </label>
+            </div>
+          </div>
 
-      location.href = url.toString();
-    };
+          <div class="lg:col-span-2">
+            <button id="modalAddBtn" type="button"
+              class="w-full px-4 py-2.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft whitespace-nowrap">
+              ➕ Добавить
+            </button>
+          </div>
+        </div>
+      </div>
 
-    // просто показать интерфейс после входа (пока условно)
-    const hasCode = !!localStorage.getItem("yandex_oauth_code");
-    if (hasCode) document.getElementById("app").style.display = "block";
-    function renderAuth() {
+      <div class="mt-8">
+        <div class="text-sm text-slate-700 ml-3 -mt-5">Список</div>
+        <div id="modalList" class="space-y-3 max-h-[45vh] overflow-y-auto pr-1"></div>
+      </div>
+
+      <div class="px-5 py-4 border-t border-white/60 flex justify-end">
+        <button id="modalDone" type="button" class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
+          Готово
+        </button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/** ============================
+ *  Storage + Utils
+ *  ============================ */
+const STORAGE_KEY = "lesson_diary_v2";
+// ===== Yandex OAuth (phase 1: only "code exists") =====
+const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
+const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/callback.html";
+
+function randomState() {
+  return crypto.getRandomValues(new Uint32Array(4)).join("-");
+}
+
+function startYandexLogin() {
+  const state = randomState();
+  localStorage.setItem("yandex_oauth_state", state);
+
+  const url = new URL("https://oauth.yandex.ru/authorize");
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("redirect_uri", REDIRECT_URI);
+  // Если пока без Диска — можно scope вообще убрать.
+  // Но раз ты уже сделал: пусть будет app_folder
+  url.searchParams.set("scope", "cloud_api:disk.app_folder");
+  url.searchParams.set("state", state);
+
+  location.href = url.toString();
+}
+
+function isLoggedIn() {
+  return !!localStorage.getItem("yandex_oauth_code");
+}
+
+function showAppOrLogin() {
+  const gate = document.getElementById("authGate");
+  const app = document.getElementById("appRoot");
+  const dbg = document.getElementById("authDebug");
+
   const code = localStorage.getItem("yandex_oauth_code");
-  const app = document.getElementById("app");
-  const loginBtn = document.getElementById("login");
+  if (dbg) dbg.textContent = code ? ("code=" + code.slice(0, 8) + "…") : "no code";
 
-  if (code) {
-    app.style.display = "block";
-    loginBtn.style.display = "none";
+  if (isLoggedIn()) {
+    gate?.classList.add("hidden");
+    app?.classList.remove("hidden");
   } else {
-    app.style.display = "none";
-    loginBtn.style.display = "inline-block";
+    gate?.classList.remove("hidden");
+    app?.classList.add("hidden");
   }
 }
 
-renderAuth();
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
 
-  </script>
+  // временно: пропустить вход (чтобы тестить дневник)
+  document.getElementById("btnDevSkip")?.addEventListener("click", () => {
+    localStorage.setItem("yandex_oauth_code", "DEV_LOCAL");
+    showAppOrLogin();
+  });
+
+  showAppOrLogin();
+});
+
+function todayISO() {
+  const d = new Date();
+  const tzOff = d.getTimezoneOffset() * 60000;
+  return new Date(d - tzOff).toISOString().slice(0, 10);
+}
+function uid() { return Math.random().toString(16).slice(2) + Date.now().toString(16); }
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    return {
+      students: [{ id: uid(), name: "Иван Иванов" }],
+      books: [{ id: uid(), name: "Учебник 1", pdfName: "" }],
+      lessons: []
+    };
+  }
+  try { return JSON.parse(raw); }
+  catch { return { students: [], books: [], lessons: [] }; }
+}
+let state = loadState();
+function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+function escapeHtml(str=""){
+  return String(str)
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;");
+}
+
+/** ============================
+ *  Elements
+ *  ============================ */
+const studentSelect = document.getElementById("studentSelect");
+const bookSelect = document.getElementById("bookSelect");
+const dateInput = document.getElementById("dateInput");
+const hwInput = document.getElementById("hwInput");
+const stopInput = document.getElementById("stopInput");
+const lessonForm = document.getElementById("lessonForm");
+
+const lessonsTbody = document.getElementById("lessonsTbody");
+const emptyState = document.getElementById("emptyState");
+
+const filterStudent = document.getElementById("filterStudent");
+const filterDate = document.getElementById("filterDate");
+const btnClearDate = document.getElementById("btnClearDate");
+const filterQuery = document.getElementById("filterQuery");
+const btnClearAll = document.getElementById("btnClearAll");
+
+const btnManageStudents = document.getElementById("btnManageStudents");
+const btnManageBooks = document.getElementById("btnManageBooks");
+
+const btnExport = document.getElementById("btnExport");
+const fileImport = document.getElementById("fileImport");
+
+/** ============================
+ *  Render helpers
+ *  ============================ */
+function renderSelect(selectEl, items, placeholderText="— выбери —") {
+  selectEl.innerHTML = "";
+  if (items.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Сначала добавь элементы…";
+    selectEl.appendChild(opt);
+    selectEl.disabled = true;
+    return;
+  }
+  selectEl.disabled = false;
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = placeholderText;
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  selectEl.appendChild(placeholder);
+
+  for (const it of items) {
+    const opt = document.createElement("option");
+    opt.value = it.id;
+    opt.textContent = it.name;
+    selectEl.appendChild(opt);
+  }
+}
+
+function renderFilterStudent() {
+  const current = filterStudent.value;
+  filterStudent.innerHTML = `<option value="">Все ученики</option>`;
+  for (const s of state.students) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.name;
+    filterStudent.appendChild(opt);
+  }
+  filterStudent.value = current || "";
+}
+
+function studentName(id){ return (state.students.find(s=>s.id===id)||{}).name || "—"; }
+function bookById(id){ return state.books.find(b=>b.id===id) || {name:"—", pdfName:""}; }
+
+function bookHref(book) {
+  if (!book.pdfName) return "";
+  return "./" + encodeURIComponent(book.pdfName);
+}
+
+function lessonMatchesFilters(lesson) {
+  const fs = filterStudent.value;
+  const fd = filterDate.value;
+  const q = (filterQuery.value || "").trim().toLowerCase();
+
+  if (fs && lesson.studentId !== fs) return false;
+  if (fd && lesson.date !== fd) return false;
+  if (q) {
+    const hay = `${lesson.hw || ""} ${lesson.stop || ""}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+/** ============================
+ *  Inline editing for lessons
+ *  ============================ */
+let editingLessonId = null;
+let editingDraft = null;
+
+function startEditLesson(id){
+  if (editingLessonId && editingLessonId !== id) cancelEditLesson();
+  const lesson = state.lessons.find(l=>l.id===id);
+  if (!lesson) return;
+  editingLessonId = id;
+  editingDraft = JSON.parse(JSON.stringify(lesson));
+  renderLessons();
+}
+function cancelEditLesson(){
+  editingLessonId = null;
+  editingDraft = null;
+  renderLessons();
+}
+function saveEditLesson(){
+  if (!editingLessonId || !editingDraft) return;
+  const idx = state.lessons.findIndex(l=>l.id===editingLessonId);
+  if (idx < 0) return;
+  state.lessons[idx] = editingDraft;
+  saveState();
+  editingLessonId = null;
+  editingDraft = null;
+  renderLessons();
+}
+
+function renderLessons() {
+  const filtered = state.lessons
+    .slice()
+    .sort((a,b) => (b.date||"").localeCompare(a.date||""))
+    .filter(lessonMatchesFilters);
+
+  lessonsTbody.innerHTML = "";
+  emptyState.classList.toggle("hidden", state.lessons.length !== 0);
+
+  for (const lesson of filtered) {
+    const isEditing = lesson.id === editingLessonId;
+    const tr = document.createElement("tr");
+    tr.className = "border-t border-white/60 hover:bg-white/40";
+
+    if (!isEditing) {
+      const book = bookById(lesson.bookId);
+      const href = bookHref(book);
+      const bookCell = href
+        ? `<a class="linkish text-indigo-700 hover:text-indigo-900" href="${href}" target="_blank" rel="noopener">${escapeHtml(book.name)}</a>`
+        : `<span>${escapeHtml(book.name)}</span>`;
+
+      tr.innerHTML = `
+        <td class="py-3 pr-3 mono whitespace-nowrap">${escapeHtml(lesson.date || "")}</td>
+        <td class="py-3 pr-3">${escapeHtml(studentName(lesson.studentId))}</td>
+        <td class="py-3 pr-3">${bookCell}</td>
+        <td class="py-3 pr-3">${escapeHtml(lesson.hw || "")}</td>
+        <td class="py-3 pr-3">${escapeHtml(lesson.stop || "")}</td>
+        <td class="py-3 pr-0 text-right whitespace-nowrap">
+          <button type="button" data-act="edit" data-id="${lesson.id}"
+            class="px-3 py-1 rounded-xl bg-white/80 border border-slate-200 hover:bg-white">✏️</button>
+          <button type="button" data-act="del" data-id="${lesson.id}"
+            class="px-3 py-1 rounded-xl bg-white/80 border border-rose-200 text-rose-700 hover:bg-white">🗑️</button>
+        </td>
+      `;
+    } else {
+      tr.innerHTML = `
+        <td class="py-3 pr-3">
+          <input data-ed="date" type="date" value="${escapeHtml(editingDraft.date || "")}"
+            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring mono" />
+        </td>
+
+        <td class="py-3 pr-3">
+          <select data-ed="student"
+            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring">
+            ${state.students.map(s =>
+              `<option value="${s.id}" ${s.id===editingDraft.studentId?'selected':''}>${escapeHtml(s.name)}</option>`
+            ).join("")}
+          </select>
+        </td>
+
+        <td class="py-3 pr-3">
+          <select data-ed="book"
+            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring">
+            ${state.books.map(b =>
+              `<option value="${b.id}" ${b.id===editingDraft.bookId?'selected':''}>${escapeHtml(b.name)}</option>`
+            ).join("")}
+          </select>
+        </td>
+
+        <td class="py-3 pr-3">
+          <input data-ed="hw" type="text" value="${escapeHtml(editingDraft.hw || "")}"
+            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring" />
+        </td>
+
+        <td class="py-3 pr-3">
+          <input data-ed="stop" type="text" value="${escapeHtml(editingDraft.stop || "")}"
+            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring" />
+        </td>
+
+        <td class="py-3 pr-0 text-right whitespace-nowrap">
+          <button type="button" data-act="save" data-id="${lesson.id}"
+            class="px-3 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">✅</button>
+          <button type="button" data-act="cancel" data-id="${lesson.id}"
+            class="px-3 py-1 rounded-xl bg-white/80 border border-slate-200 hover:bg-white">✖</button>
+        </td>
+      `;
+    }
+
+    lessonsTbody.appendChild(tr);
+  }
+}
+
+/** ============================
+ *  Init
+ *  ============================ */
+dateInput.value = todayISO();
+
+function refreshAll() {
+  renderSelect(studentSelect, state.students, "Выбери ученика");
+  renderSelect(bookSelect, state.books, "Выбери учебник");
+
+  if (!studentSelect.disabled) studentSelect.value = state.students[0]?.id || "";
+  if (!bookSelect.disabled) bookSelect.value = state.books[0]?.id || "";
+
+  renderFilterStudent();
+  renderLessons();
+  saveState();
+}
+refreshAll();
+
+/** ============================
+ *  Add lesson
+ *  ============================ */
+lessonForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (state.students.length === 0 || state.books.length === 0) {
+    alert("Сначала добавь учеников и учебники.");
+    return;
+  }
+  const studentId = studentSelect.value || state.students[0]?.id;
+  const bookId = bookSelect.value || state.books[0]?.id;
+  const date = dateInput.value || todayISO();
+  const hw = hwInput.value.trim();
+  const stop = stopInput.value.trim();
+
+  if (!studentId || !bookId) { alert("Выбери ученика и учебник."); return; }
+
+  state.lessons.push({ id: uid(), studentId, bookId, date, hw, stop });
+  saveState();
+
+  hwInput.value = "";
+  stopInput.value = "";
+  renderLessons();
+});
+
+/** ============================
+ *  Lesson actions
+ *  ============================ */
+lessonsTbody.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+
+  const act = btn.dataset.act;
+  const id = btn.dataset.id;
+  const lesson = state.lessons.find(x => x.id === id);
+  if (!lesson) return;
+
+  if (act === "del") {
+    if (!confirm("Удалить запись?")) return;
+    state.lessons = state.lessons.filter(x => x.id !== id);
+    saveState();
+    if (editingLessonId === id) cancelEditLesson();
+    else renderLessons();
+    return;
+  }
+
+  if (act === "edit") startEditLesson(id);
+  if (act === "cancel") cancelEditLesson();
+  if (act === "save") saveEditLesson();
+});
+
+lessonsTbody.addEventListener("input", (e) => {
+  if (!editingLessonId || !editingDraft) return;
+  const el = e.target;
+  const key = el.getAttribute("data-ed");
+  if (!key) return;
+
+  if (key === "date") editingDraft.date = el.value;
+  if (key === "student") editingDraft.studentId = el.value;
+  if (key === "book") editingDraft.bookId = el.value;
+  if (key === "hw") editingDraft.hw = el.value;
+  if (key === "stop") editingDraft.stop = el.value;
+});
+
+/** ============================
+ *  Filters
+ *  ============================ */
+filterStudent.addEventListener("change", renderLessons);
+filterDate.addEventListener("change", renderLessons);
+filterQuery.addEventListener("input", renderLessons);
+
+btnClearDate.addEventListener("click", () => { filterDate.value = ""; renderLessons(); });
+
+btnClearAll.addEventListener("click", () => {
+  if (state.lessons.length === 0) return;
+  if (!confirm("Точно очистить всю историю занятий?")) return;
+  state.lessons = [];
+  saveState();
+  cancelEditLesson();
+});
+
+/** ============================
+ *  Modal management (WORKING)
+ *  ============================ */
+const modalBackdrop = document.getElementById("modalBackdrop");
+const modalTitle = document.getElementById("modalTitle");
+const modalSubtitle = document.getElementById("modalSubtitle");
+const modalClose = document.getElementById("modalClose");
+const modalDone = document.getElementById("modalDone");
+const modalList = document.getElementById("modalList");
+
+const modalNewName = document.getElementById("modalNewName");
+const modalPdfArea = document.getElementById("modalPdfArea");
+const modalNewPdfLabel = document.getElementById("modalNewPdfLabel");
+const modalNewPdfPick = document.getElementById("modalNewPdfPick");
+const modalAddBtn = document.getElementById("modalAddBtn");
+
+let modalMode = "students"; // "students" | "books"
+let newBookPdfName = "";
+
+// inline edit
+let editingStudentId = null;
+let editingStudentDraft = null; // { name }
+
+let editingBookId = null;
+let editingBookDraft = null; // { name, pdfName }
+
+function bookHrefByPdfName(pdfName) {
+  if (!pdfName) return "";
+  return "./" + encodeURIComponent(pdfName);
+}
+
+function openModal(mode) {
+  modalMode = mode;
+
+  editingStudentId = null;
+  editingStudentDraft = null;
+  editingBookId = null;
+  editingBookDraft = null;
+
+  modalNewName.value = "";
+  newBookPdfName = "";
+  modalNewPdfLabel.value = "PDF не выбран";
+  modalNewPdfPick.value = "";
+
+  const isStudents = mode === "students";
+  modalTitle.textContent = isStudents ? "Ученики" : "Учебники (PDF)";
+  modalSubtitle.textContent = isStudents
+    ? "Добавляй/редактируй/удаляй учеников (Имя Фамилия)"
+    : "PDF выбирается из папки рядом с diary.html. Сохраняется имя файла, открывается по клику в истории.";
+
+  modalPdfArea.classList.toggle("hidden", isStudents);
+
+  renderModalList();
+  modalBackdrop.classList.remove("hidden");
+  setTimeout(() => modalNewName.focus(), 50);
+}
+
+function closeModal() {
+  modalBackdrop.classList.add("hidden");
+  refreshAll();
+}
+
+function renderModalList() {
+  modalList.innerHTML = "";
+
+  // ===== STUDENTS =====
+  if (modalMode === "students") {
+    if (state.students.length === 0) {
+      modalList.innerHTML = `<div class="text-sm text-slate-600">Пока пусто. Добавь первого ученика выше.</div>`;
+      return;
+    }
+
+    for (const s of state.students) {
+      const isEditing = s.id === editingStudentId;
+
+      const row = document.createElement("div");
+      row.className = "rounded-2xl border border-white/60 bg-white/55 p-4";
+
+      if (!isEditing) {
+        row.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="text-xs font-medium text-slate-600 mb-1">Ученик</div>
+              <div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-white truncate">
+                ${escapeHtml(s.name)}
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 shrink-0">
+              <button type="button" data-stu-act="edit" data-id="${s.id}"
+                class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
+                title="Редактировать">✏️</button>
+
+              <button type="button" data-del-stu="${s.id}"
+                class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-700 hover:bg-white shadow-soft"
+                title="Удалить">🗑️</button>
+            </div>
+          </div>
+        `;
+      } else {
+        row.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="text-xs font-medium text-slate-600 mb-1">Ученик</div>
+              <input type="text" data-stu-edit="name"
+                class="h-11 w-full px-3 rounded-xl border border-slate-200 bg-white focus-ring"
+                value="${escapeHtml(editingStudentDraft?.name ?? s.name)}" />
+            </div>
+
+            <div class="flex items-center gap-2 shrink-0">
+              <button type="button" data-stu-act="save" data-id="${s.id}"
+                class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-soft"
+                title="Сохранить">✅</button>
+
+              <button type="button" data-stu-act="cancel" data-id="${s.id}"
+                class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
+                title="Отмена">✖</button>
+            </div>
+          </div>
+        `;
+      }
+
+      modalList.appendChild(row);
+    }
+    return;
+  }
+
+  // ===== BOOKS (stable layout) =====
+  if (state.books.length === 0) {
+    modalList.innerHTML = `<div class="text-sm text-slate-600">Пока пусто. Добавь первый учебник выше.</div>`;
+    return;
+  }
+
+  for (const b of state.books) {
+    const isEditing = b.id === editingBookId;
+    const draft = isEditing ? (editingBookDraft || { name: b.name, pdfName: b.pdfName || "" }) : null;
+
+    const nameText = isEditing ? (draft.name || "") : (b.name || "");
+    const pdfText = isEditing ? (draft.pdfName || "") : (b.pdfName || "");
+    const href = bookHrefByPdfName(pdfText);
+
+    const row = document.createElement("div");
+    row.className = "rounded-2xl border border-white/60 bg-white/55 p-4";
+
+    row.innerHTML = `
+      <div class="flex items-center gap-3">
+        <!-- Название: чуть уже, чтобы справа всегда был “пульт” -->
+        <div class="flex-[0.95] min-w-0">
+          <div class="text-xs font-medium text-slate-600 mb-1">Учебник</div>
+          ${
+            isEditing
+              ? `<input type="text" data-book-edit="name"
+                   class="h-11 w-full px-3 rounded-xl border border-slate-200 bg-white focus-ring"
+                   value="${escapeHtml(nameText)}" />`
+              : `<div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-white truncate">
+                   ${escapeHtml(nameText)}
+                 </div>`
+          }
+        </div>
+
+        <div class="flex-[1.05] min-w-0">
+          <div class="text-xs font-medium text-slate-600 mb-1">PDF</div>
+          <div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 truncate">
+            ${escapeHtml(pdfText || "PDF не выбран")}
+          </div>
+        </div>
+
+        <!-- Пульт справа фиксированный => не “плывет” -->
+        <div class="shrink-0 w-[264px] flex items-center justify-end gap-2">
+          <label class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-50 shadow-soft cursor-pointer"
+                 title="Выбрать PDF">
+            📎
+            <input data-book-pick="${b.id}" type="file" accept="application/pdf" class="hidden">
+          </label>
+
+          <a class="h-11 w-[110px] inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-50 shadow-soft whitespace-nowrap
+              ${href ? "linkish text-indigo-700" : "pointer-events-none opacity-40"}"
+            ${href ? `href="${href}" target="_blank" rel="noopener"` : ""}>
+            Открыть
+          </a>
+
+          ${
+            isEditing
+              ? `
+                <button type="button" data-book-act="save" data-id="${b.id}"
+                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-soft"
+                  title="Сохранить">✅</button>
+
+                <button type="button" data-book-act="cancel" data-id="${b.id}"
+                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
+                  title="Отмена">✖</button>
+              `
+              : `
+                <button type="button" data-book-act="edit" data-id="${b.id}"
+                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
+                  title="Редактировать">✏️</button>
+
+                <button type="button" data-del-book="${b.id}"
+                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-700 hover:bg-white shadow-soft"
+                  title="Удалить">🗑️</button>
+              `
+          }
+        </div>
+      </div>
+    `;
+
+    modalList.appendChild(row);
+  }
+}
+
+// pick PDF in top add-area
+modalNewPdfPick.addEventListener("change", () => {
+  const f = modalNewPdfPick.files?.[0];
+  if (!f) return;
+  newBookPdfName = f.name;
+  modalNewPdfLabel.value = f.name;
+});
+
+// add new
+modalAddBtn.addEventListener("click", () => {
+  const name = modalNewName.value.trim();
+  if (!name) return;
+
+  if (modalMode === "students") {
+    if (state.students.some(x => (x.name || "").trim().toLowerCase() === name.toLowerCase())) {
+      alert("Такой ученик уже есть.");
+      return;
+    }
+    state.students.push({ id: uid(), name });
+    saveState();
+    modalNewName.value = "";
+    renderModalList();
+    refreshAll();
+    return;
+  }
+
+  if (state.books.some(x => (x.name || "").trim().toLowerCase() === name.toLowerCase())) {
+    alert("Такой учебник уже есть.");
+    return;
+  }
+  state.books.push({ id: uid(), name, pdfName: newBookPdfName || "" });
+  saveState();
+
+  modalNewName.value = "";
+  newBookPdfName = "";
+  modalNewPdfLabel.value = "PDF не выбран";
+  modalNewPdfPick.value = "";
+
+  renderModalList();
+  refreshAll();
+});
+
+// live typing drafts
+modalList.addEventListener("input", (e) => {
+  if (modalMode === "students" && editingStudentId) {
+    if (e.target.getAttribute("data-stu-edit") === "name") {
+      editingStudentDraft.name = e.target.value;
+    }
+    return;
+  }
+  if (modalMode === "books" && editingBookId) {
+    if (e.target.getAttribute("data-book-edit") === "name") {
+      editingBookDraft.name = e.target.value;
+    }
+    return;
+  }
+});
+
+// pick PDF per book (works from view too)
+modalList.addEventListener("change", (e) => {
+  const pickId = e.target.getAttribute("data-book-pick");
+  if (!pickId) return;
+
+  const f = e.target.files?.[0];
+  if (!f) return;
+
+  const b = state.books.find(x => x.id === pickId);
+  if (!b) return;
+
+  editingBookId = pickId;
+  editingBookDraft = { name: b.name, pdfName: f.name };
+  renderModalList();
+});
+
+// click actions
+modalList.addEventListener("click", (e) => {
+  // delete student
+  const delStuBtn = e.target.closest("button[data-del-stu]");
+  if (delStuBtn) {
+    const id = delStuBtn.getAttribute("data-del-stu");
+    const used = state.lessons.some(l => l.studentId === id);
+    if (used) { alert("Нельзя удалить: ученик используется в истории."); return; }
+    if (!confirm("Удалить ученика?")) return;
+
+    state.students = state.students.filter(x => x.id !== id);
+    saveState();
+    refreshAll();
+    renderModalList();
+    return;
+  }
+
+  // student actions
+  const stuActBtn = e.target.closest("button[data-stu-act]");
+  if (stuActBtn) {
+    const act = stuActBtn.getAttribute("data-stu-act");
+    const id = stuActBtn.getAttribute("data-id");
+    const s = state.students.find(x => x.id === id);
+    if (!s) return;
+
+    if (act === "edit") {
+      editingStudentId = id;
+      editingStudentDraft = { name: s.name };
+      renderModalList();
+      return;
+    }
+    if (act === "cancel") {
+      editingStudentId = null;
+      editingStudentDraft = null;
+      renderModalList();
+      return;
+    }
+    if (act === "save") {
+      const newName = (editingStudentDraft?.name || "").trim();
+      if (!newName) { alert("Имя не может быть пустым."); return; }
+
+      const dup = state.students.some(x =>
+        x.id !== id && (x.name || "").trim().toLowerCase() === newName.toLowerCase()
+      );
+      if (dup) { alert("Такой ученик уже есть. Добавь номер (Соня 2)."); return; }
+
+      s.name = newName;
+      saveState();
+      refreshAll();
+
+      editingStudentId = null;
+      editingStudentDraft = null;
+      renderModalList();
+      return;
+    }
+  }
+
+  // delete book
+  const delBookBtn = e.target.closest("button[data-del-book]");
+  if (delBookBtn) {
+    const id = delBookBtn.getAttribute("data-del-book");
+    const used = state.lessons.some(l => l.bookId === id);
+    if (used) { alert("Нельзя удалить: учебник используется в истории."); return; }
+    if (!confirm("Удалить учебник?")) return;
+
+    state.books = state.books.filter(x => x.id !== id);
+    saveState();
+    refreshAll();
+    renderModalList();
+    return;
+  }
+
+  // book actions
+  const bookActBtn = e.target.closest("button[data-book-act]");
+  if (bookActBtn) {
+    const act = bookActBtn.getAttribute("data-book-act");
+    const id = bookActBtn.getAttribute("data-id");
+    const b = state.books.find(x => x.id === id);
+    if (!b) return;
+
+    if (act === "edit") {
+      editingBookId = id;
+      editingBookDraft = { name: b.name, pdfName: b.pdfName || "" };
+      renderModalList();
+      return;
+    }
+    if (act === "cancel") {
+      editingBookId = null;
+      editingBookDraft = null;
+      renderModalList();
+      return;
+    }
+    if (act === "save") {
+      const newName = (editingBookDraft?.name || "").trim();
+      const newPdf = (editingBookDraft?.pdfName || "").trim();
+      if (!newName) { alert("Название не может быть пустым."); return; }
+
+      const dup = state.books.some(x =>
+        x.id !== id && (x.name || "").trim().toLowerCase() === newName.toLowerCase()
+      );
+      if (dup) { alert("Такой учебник уже есть."); return; }
+
+      b.name = newName;
+      b.pdfName = newPdf;
+
+      saveState();
+      refreshAll();
+
+      editingBookId = null;
+      editingBookDraft = null;
+      renderModalList();
+      return;
+    }
+  }
+});
+
+modalClose.addEventListener("click", closeModal);
+modalDone.addEventListener("click", closeModal);
+modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
+
+btnManageStudents.addEventListener("click", () => openModal("students"));
+btnManageBooks.addEventListener("click", () => openModal("books"));
+
+/** ============================
+ *  Export / Import
+ *  ============================ */
+btnExport.addEventListener("click", () => {
+  const data = JSON.stringify(state, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `diary-backup-${todayISO()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+fileImport.addEventListener("change", async () => {
+  const file = fileImport.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const imported = JSON.parse(text);
+
+    if (!imported || typeof imported !== "object") throw new Error("bad");
+    if (!Array.isArray(imported.students) || !Array.isArray(imported.books) || !Array.isArray(imported.lessons)) {
+      throw new Error("bad");
+    }
+
+    state = imported;
+    saveState();
+    refreshAll();
+    alert("Импорт выполнен ✅");
+  } catch {
+    alert("Не удалось импортировать: файл некорректный.");
+  } finally {
+    fileImport.value = "";
+  }
+});
+</script>
 </body>
 </html>
