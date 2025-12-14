@@ -3,10 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Авторизация…</title>
+  <title>OAuth callback</title>
 </head>
 <body>
+<h2>OAuth callback</h2>
+<pre id="out"></pre>
+<button id="back" style="padding:10px 14px;font-size:16px">Вернуться в приложение</button>
+
 <script>
+  const out = document.getElementById("out");
+
   const params = new URLSearchParams(location.search);
   const code  = params.get("code");
   const state = params.get("state");
@@ -15,17 +21,28 @@
 
   const savedState = localStorage.getItem("yandex_oauth_state");
 
+  out.textContent =
+    "URL: " + location.href + "\n\n" +
+    "code: " + code + "\n" +
+    "state: " + state + "\n" +
+    "savedState: " + savedState + "\n" +
+    "error: " + error + "\n" +
+    "error_description: " + desc + "\n\n";
+
   if (error) {
-    document.body.innerText = "Ошибка OAuth: " + error + "\n" + (desc || "");
+    out.textContent += "❌ OAuth error";
   } else if (!code) {
-    document.body.innerText = "Ошибка авторизации: code не получен";
+    out.textContent += "❌ code не пришёл";
   } else if (!state || state !== savedState) {
-    document.body.innerText = "Ошибка авторизации: state не совпал";
+    out.textContent += "❌ state не совпал — code НЕ сохраняю";
   } else {
     localStorage.setItem("yandex_oauth_code", code);
-    // возвращаемся в приложение (в папку проекта)
-    location.href = "./";
+    out.textContent += "✅ OK: code сохранён в localStorage";
   }
+
+  document.getElementById("back").onclick = () => {
+    location.href = "https://zuyvladislav.github.io/my-diary-app/?t=" + Date.now();
+  };
 </script>
 </body>
 </html>
