@@ -570,11 +570,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       state = loadStateLocal();
     }
   }
-
-  // ВАЖНО: дальше твой код дневника использует state как раньше
+bootDiary();
 });
 </script>
 
+  function bootDiary() {
 /** ============================
  *  Elements
  *  ============================ */
@@ -1322,3 +1322,4 @@ fileImport.addEventListener("change", async () => {
 </script>
 </body>
 </html>
+}
