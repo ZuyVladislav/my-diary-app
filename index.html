@@ -19,12 +19,24 @@
 
 <body class="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-fuchsia-50 text-slate-900">
 
+  <!-- Overlay: загрузка/синхронизация -->
+  <div id="syncOverlay" class="hidden fixed inset-0 bg-white/70 backdrop-blur-sm z-50">
+    <div class="h-full flex items-center justify-center p-6">
+      <div class="glass rounded-2xl border border-white/60 shadow-soft p-6 max-w-md w-full">
+        <div class="text-lg font-semibold">Загрузка данных…</div>
+        <div id="syncOverlayText" class="mt-2 text-sm text-slate-600">
+          Пожалуйста, подожди пару секунд.
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Auth gate (СНАРУЖИ appRoot) -->
   <div id="authGate" class="max-w-6xl mx-auto px-4 py-8 hidden">
     <div class="glass rounded-2xl border border-white/60 shadow-soft p-6">
       <h2 class="text-2xl font-semibold">Вход</h2>
       <p class="mt-2 text-slate-600">
-        Чтобы открыть дневник, войди через Яндекс.
+        Чтобы открыть дневник, войди через Яндекс (данные будут храниться в Яндекс.Диске, папка приложения).
       </p>
 
       <div class="mt-4 flex flex-wrap gap-2">
@@ -248,13 +260,17 @@
   </div>
 
 <script>
-<script>
-/** ============================
- *  Storage + Utils
- *  ============================ */
-const STORAGE_KEY = "lesson_diary_v2";
+/** =========================================================
+ *  НАСТРОЙКИ
+ *  ========================================================= */
+const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
+const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/"; // ДОЛЖНО совпасть с OAuth настройкой
+const DISK_STATE_PATH = "app:/diary-state.json"; // app folder
+const STORAGE_KEY_LOCAL = "lesson_diary_v2_local";
 
-// ===== base utils/state (обязательно для дневника) =====
+/** =========================================================
+ *  УТИЛИТЫ
+ *  ========================================================= */
 function todayISO() {
   const d = new Date();
   const tzOff = d.getTimezoneOffset() * 60000;
@@ -278,27 +294,9 @@ function defaultState() {
   };
 }
 
-// ======= Local storage (только для local-режима) =======
-function loadStateLocal() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return defaultState();
-  try { return JSON.parse(raw); } catch { return defaultState(); }
-}
-function saveStateLocal(s) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-}
-
-// ===== Yandex OAuth (implicit token, без сервера) =====
-const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
-const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/";
-
-// файл на Диске (app folder)
-const DISK_STATE_PATH = "app:/diary-state.json";
-
-// helpers
-function randomState() {
-  return crypto.getRandomValues(new Uint32Array(4)).join("-");
-}
+/** =========================================================
+ *  РЕЖИМЫ / ТОКЕН
+ *  ========================================================= */
 function getToken() {
   return localStorage.getItem("yandex_oauth_token") || "";
 }
@@ -311,8 +309,47 @@ function isLocalMode() {
 function canEnterApp() {
   return isYandexLoggedIn() || isLocalMode();
 }
+function setSyncOverlay(on, text="") {
+  const ov = document.getElementById("syncOverlay");
+  const tx = document.getElementById("syncOverlayText");
+  if (tx) tx.textContent = text || "Пожалуйста, подожди пару секунд.";
+  ov?.classList.toggle("hidden", !on);
+}
 
-// ===== Yandex: профиль (whoami) =====
+/** =========================================================
+ *  LOCAL STORAGE (только для local-режима)
+ *  ========================================================= */
+function loadStateLocal() {
+  const raw = localStorage.getItem(STORAGE_KEY_LOCAL);
+  if (!raw) return defaultState();
+  try { return JSON.parse(raw); } catch { return defaultState(); }
+}
+function saveStateLocal(s) {
+  localStorage.setItem(STORAGE_KEY_LOCAL, JSON.stringify(s));
+}
+
+/** =========================================================
+ *  YANDEX OAUTH (implicit)
+ *  ========================================================= */
+function randomState() {
+  return crypto.getRandomValues(new Uint32Array(4)).join("-");
+}
+
+function startYandexLogin() {
+  const st = randomState();
+  localStorage.setItem("yandex_oauth_state", st);
+
+  const url = new URL("https://oauth.yandex.ru/authorize");
+  url.searchParams.set("response_type", "token");
+  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("redirect_uri", REDIRECT_URI);
+  url.searchParams.set("scope", "cloud_api:disk.app_folder");
+  url.searchParams.set("state", st);
+  url.searchParams.set("prompt", "login"); // чтобы можно было выбрать другой аккаунт
+
+  location.href = url.toString();
+}
+
 async function fetchYandexUser(token) {
   const r = await fetch("https://login.yandex.ru/info?format=json", {
     headers: { Authorization: `OAuth ${token}` }
@@ -321,25 +358,6 @@ async function fetchYandexUser(token) {
   return r.json();
 }
 
-// ===== Yandex: старт логина =====
-function startYandexLogin() {
-  const state = randomState();
-  localStorage.setItem("yandex_oauth_state", state);
-
-  const url = new URL("https://oauth.yandex.ru/authorize");
-  url.searchParams.set("response_type", "token");
-  url.searchParams.set("client_id", CLIENT_ID);
-  url.searchParams.set("redirect_uri", REDIRECT_URI);
-  url.searchParams.set("scope", "cloud_api:disk.app_folder");
-  url.searchParams.set("state", state);
-
-  // ВАЖНО: чтобы можно было выбрать другой аккаунт
-  url.searchParams.set("prompt", "login");
-
-  location.href = url.toString();
-}
-
-// ===== обработка возврата (#access_token=...) =====
 async function handleOAuthReturn() {
   const hash = new URLSearchParams(location.hash.slice(1));
   const token = hash.get("access_token");
@@ -348,7 +366,7 @@ async function handleOAuthReturn() {
 
   if (!token) return;
 
-  // подчистим URL в любом случае
+  // чистим URL сразу
   history.replaceState({}, "", location.pathname);
 
   // если state не совпал — не логиним
@@ -358,7 +376,6 @@ async function handleOAuthReturn() {
   localStorage.removeItem("yandex_oauth_state");
   localStorage.removeItem("auth_mode");
 
-  // whoami
   try {
     const me = await fetchYandexUser(token);
     localStorage.setItem(
@@ -370,8 +387,10 @@ async function handleOAuthReturn() {
   }
 }
 
-// ====== Yandex Disk API (простая загрузка/сохранение) ======
-async function diskRequest(url, { method="GET", token, headers={}, body } = {}) {
+/** =========================================================
+ *  YANDEX DISK API (app folder) — ПРОСТО
+ *  ========================================================= */
+async function diskApi(url, { method="GET", token, headers={}, body } = {}) {
   const r = await fetch(url, {
     method,
     headers: {
@@ -387,35 +406,33 @@ async function loadStateFromDisk() {
   const token = getToken();
   if (!token) throw new Error("no token");
 
-  // 1) пытаемся получить download href
-  const dl = await diskRequest(
+  // 1) href на скачивание
+  const dl = await diskApi(
     `https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(DISK_STATE_PATH)}`,
     { token }
   );
 
   if (dl.status === 404) {
-    // файла нет — создаём дефолтный state (и сразу сохраняем на диск)
+    // файла нет — создаём дефолт и сохраняем
     const s = defaultState();
     await saveStateToDisk(s);
     return s;
   }
-
   if (!dl.ok) throw new Error("download link failed");
 
   const { href } = await dl.json();
 
-  // 2) скачиваем сам файл
+  // 2) скачать файл
   const file = await fetch(href);
   if (!file.ok) throw new Error("file fetch failed");
 
   const json = await file.json();
 
-  // минимальная валидация, чтобы не упасть
+  // валидация
   if (!json || typeof json !== "object") return defaultState();
   if (!Array.isArray(json.students) || !Array.isArray(json.books) || !Array.isArray(json.lessons)) {
     return defaultState();
   }
-
   return json;
 }
 
@@ -423,8 +440,8 @@ async function saveStateToDisk(stateObj) {
   const token = getToken();
   if (!token) throw new Error("no token");
 
-  // 1) берём upload href
-  const up = await diskRequest(
+  // 1) href на загрузку
+  const up = await diskApi(
     `https://cloud-api.yandex.net/v1/disk/resources/upload?path=${encodeURIComponent(DISK_STATE_PATH)}&overwrite=true`,
     { token }
   );
@@ -432,7 +449,7 @@ async function saveStateToDisk(stateObj) {
 
   const { href } = await up.json();
 
-  // 2) грузим файл
+  // 2) PUT json
   const data = JSON.stringify(stateObj, null, 2);
   const put = await fetch(href, {
     method: "PUT",
@@ -442,7 +459,9 @@ async function saveStateToDisk(stateObj) {
   if (!put.ok) throw new Error("put failed");
 }
 
-// ===== UI gate / app =====
+/** =========================================================
+ *  UI: gate/app
+ *  ========================================================= */
 function showAppOrLogin() {
   const gate = document.getElementById("authGate");
   const app  = document.getElementById("appRoot");
@@ -485,841 +504,840 @@ function showAppOrLogin() {
   btnDevSkip?.classList.toggle("hidden", logged);
 }
 
-// ===== ГЛОБАЛЬНЫЙ state дневника =====
+/** =========================================================
+ *  ГЛОБАЛЬНЫЙ STATE + SAVE (простая логика)
+ *  ========================================================= */
 let state = defaultState();
 
-// ===== ЕДИНЫЙ saveState: диск или local =====
-async function saveState() {
-  if (isYandexLoggedIn()) {
-    // В режиме входа: ТОЛЬКО диск (просто и честно)
-    await saveStateToDisk(state);
-  } else {
-    // В local режиме: ТОЛЬКО localStorage
-    saveStateLocal(state);
-  }
+// очередь сохранений (чтобы не было гонок при быстрых кликах)
+let saveQueue = Promise.resolve();
+
+function persist() {
+  saveQueue = saveQueue
+    .then(async () => {
+      if (isYandexLoggedIn()) {
+        await saveStateToDisk(state);
+      } else {
+        saveStateLocal(state);
+      }
+    })
+    .catch((e) => {
+      console.error("Save failed:", e);
+      // в простом варианте просто молча не сохраняем, чтобы UI не падал
+    });
+  return saveQueue;
 }
 
-/** ============================
- *  Boot
- *  ============================ */
-document.addEventListener("DOMContentLoaded", async () => {
-  // обработать возврат с Яндекса
-  await handleOAuthReturn();
+/** =========================================================
+ *  ДНЕВНИК (весь функционал в одной функции)
+ *  ========================================================= */
+function bootDiary() {
+  /** ============================
+   *  Elements
+   *  ============================ */
+  const studentSelect = document.getElementById("studentSelect");
+  const bookSelect = document.getElementById("bookSelect");
+  const dateInput = document.getElementById("dateInput");
+  const hwInput = document.getElementById("hwInput");
+  const stopInput = document.getElementById("stopInput");
+  const lessonForm = document.getElementById("lessonForm");
 
-  // если нет ни токена, ни выбранного режима — local по умолчанию
-  if (!localStorage.getItem("auth_mode") && !isYandexLoggedIn()) {
-    localStorage.setItem("auth_mode", "local");
-  }
+  const lessonsTbody = document.getElementById("lessonsTbody");
+  const emptyState = document.getElementById("emptyState");
 
-  // кнопки логина
-  document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
-  document.getElementById("btnLoginTop")?.addEventListener("click", startYandexLogin);
+  const filterStudent = document.getElementById("filterStudent");
+  const filterDate = document.getElementById("filterDate");
+  const btnClearDate = document.getElementById("btnClearDate");
+  const filterQuery = document.getElementById("filterQuery");
+  const btnClearAll = document.getElementById("btnClearAll");
 
-  // пропустить (локально)
-  document.getElementById("btnDevSkip")?.addEventListener("click", () => {
-    localStorage.setItem("auth_mode", "local");
-    showAppOrLogin();
-  });
+  const btnManageStudents = document.getElementById("btnManageStudents");
+  const btnManageBooks = document.getElementById("btnManageBooks");
 
-  // выйти (полный разлогин)
-  document.getElementById("btnLogout")?.addEventListener("click", () => {
-    if (!confirm("Выйти?")) return;
+  const btnExport = document.getElementById("btnExport");
+  const fileImport = document.getElementById("fileImport");
 
-    localStorage.removeItem("yandex_oauth_token");
-    localStorage.removeItem("yandex_user_display");
-    localStorage.removeItem("yandex_oauth_state");
-
-    // возвращаем local режим
-    localStorage.setItem("auth_mode", "local");
-    showAppOrLogin();
-
-    // state в local (чтобы дневник не пустой был)
-    state = loadStateLocal();
-  });
-
-  // сменить аккаунт (форс-логин с выбором пользователя)
-  document.getElementById("btnSwitch")?.addEventListener("click", () => {
-    // можно оставить токен — но проще: очистить и заново
-    localStorage.removeItem("yandex_oauth_token");
-    localStorage.removeItem("yandex_user_display");
-    startYandexLogin();
-  });
-
-  showAppOrLogin();
-
-  // === Загрузка данных ===
-  try {
-    if (isYandexLoggedIn()) {
-      // В режиме входа — тянем с Диска и только после этого работаем
-      state = await loadStateFromDisk();
-    } else {
-      // В local режиме — localStorage
-      state = loadStateLocal();
+  /** ============================
+   *  Render helpers
+   *  ============================ */
+  function renderSelect(selectEl, items, placeholderText="— выбери —") {
+    selectEl.innerHTML = "";
+    if (items.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Сначала добавь элементы…";
+      selectEl.appendChild(opt);
+      selectEl.disabled = true;
+      return;
     }
-  } catch (e) {
-    // Если вход есть, но Диск/сеть не доступна — не пускаем (как ты и хотел)
-    if (isYandexLoggedIn()) {
-      alert("Не удалось загрузить данные с Яндекс.Диска. Проверь интернет и попробуй ещё раз.");
-      // выкидываем в local режим
-      localStorage.removeItem("yandex_oauth_token");
-      localStorage.removeItem("yandex_user_display");
-      localStorage.setItem("auth_mode", "local");
-      showAppOrLogin();
-      state = loadStateLocal();
-    } else {
-      state = loadStateLocal();
+    selectEl.disabled = false;
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = placeholderText;
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    selectEl.appendChild(placeholder);
+
+    for (const it of items) {
+      const opt = document.createElement("option");
+      opt.value = it.id;
+      opt.textContent = it.name;
+      selectEl.appendChild(opt);
     }
   }
-bootDiary();
-});
-</script>
 
-  function bootDiary() {
-/** ============================
- *  Elements
- *  ============================ */
-const studentSelect = document.getElementById("studentSelect");
-const bookSelect = document.getElementById("bookSelect");
-const dateInput = document.getElementById("dateInput");
-const hwInput = document.getElementById("hwInput");
-const stopInput = document.getElementById("stopInput");
-const lessonForm = document.getElementById("lessonForm");
-
-const lessonsTbody = document.getElementById("lessonsTbody");
-const emptyState = document.getElementById("emptyState");
-
-const filterStudent = document.getElementById("filterStudent");
-const filterDate = document.getElementById("filterDate");
-const btnClearDate = document.getElementById("btnClearDate");
-const filterQuery = document.getElementById("filterQuery");
-const btnClearAll = document.getElementById("btnClearAll");
-
-const btnManageStudents = document.getElementById("btnManageStudents");
-const btnManageBooks = document.getElementById("btnManageBooks");
-
-const btnExport = document.getElementById("btnExport");
-const fileImport = document.getElementById("fileImport");
-
-/** ============================
- *  Render helpers
- *  ============================ */
-function renderSelect(selectEl, items, placeholderText="— выбери —") {
-  selectEl.innerHTML = "";
-  if (items.length === 0) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "Сначала добавь элементы…";
-    selectEl.appendChild(opt);
-    selectEl.disabled = true;
-    return;
-  }
-  selectEl.disabled = false;
-
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = placeholderText;
-  placeholder.disabled = true;
-  placeholder.selected = true;
-  selectEl.appendChild(placeholder);
-
-  for (const it of items) {
-    const opt = document.createElement("option");
-    opt.value = it.id;
-    opt.textContent = it.name;
-    selectEl.appendChild(opt);
-  }
-}
-
-function renderFilterStudent() {
-  const current = filterStudent.value;
-  filterStudent.innerHTML = `<option value="">Все ученики</option>`;
-  for (const s of state.students) {
-    const opt = document.createElement("option");
-    opt.value = s.id;
-    opt.textContent = s.name;
-    filterStudent.appendChild(opt);
-  }
-  filterStudent.value = current || "";
-}
-
-function studentName(id){ return (state.students.find(s=>s.id===id)||{}).name || "—"; }
-function bookById(id){ return state.books.find(b=>b.id===id) || {name:"—", pdfName:""}; }
-
-function bookHref(book) {
-  if (!book.pdfName) return "";
-  return "./" + encodeURIComponent(book.pdfName);
-}
-
-function lessonMatchesFilters(lesson) {
-  const fs = filterStudent.value;
-  const fd = filterDate.value;
-  const q = (filterQuery.value || "").trim().toLowerCase();
-
-  if (fs && lesson.studentId !== fs) return false;
-  if (fd && lesson.date !== fd) return false;
-  if (q) {
-    const hay = `${lesson.hw || ""} ${lesson.stop || ""}`.toLowerCase();
-    if (!hay.includes(q)) return false;
-  }
-  return true;
-}
-
-/** ============================
- *  Inline editing for lessons
- *  ============================ */
-let editingLessonId = null;
-let editingDraft = null;
-
-function startEditLesson(id){
-  if (editingLessonId && editingLessonId !== id) cancelEditLesson();
-  const lesson = state.lessons.find(l=>l.id===id);
-  if (!lesson) return;
-  editingLessonId = id;
-  editingDraft = JSON.parse(JSON.stringify(lesson));
-  renderLessons();
-}
-function cancelEditLesson(){
-  editingLessonId = null;
-  editingDraft = null;
-  renderLessons();
-}
-function saveEditLesson(){
-  if (!editingLessonId || !editingDraft) return;
-  const idx = state.lessons.findIndex(l=>l.id===editingLessonId);
-  if (idx < 0) return;
-  state.lessons[idx] = editingDraft;
-  saveState().catch(()=>{});
-  editingLessonId = null;
-  editingDraft = null;
-  renderLessons();
-}
-
-function renderLessons() {
-  const filtered = state.lessons
-    .slice()
-    .sort((a,b) => (b.date||"").localeCompare(a.date||""))
-    .filter(lessonMatchesFilters);
-
-  lessonsTbody.innerHTML = "";
-  emptyState.classList.toggle("hidden", state.lessons.length !== 0);
-
-  for (const lesson of filtered) {
-    const isEditing = lesson.id === editingLessonId;
-    const tr = document.createElement("tr");
-    tr.className = "border-t border-white/60 hover:bg-white/40";
-
-    if (!isEditing) {
-      const book = bookById(lesson.bookId);
-      const href = bookHref(book);
-      const bookCell = href
-        ? `<a class="linkish text-indigo-700 hover:text-indigo-900" href="${href}" target="_blank" rel="noopener">${escapeHtml(book.name)}</a>`
-        : `<span>${escapeHtml(book.name)}</span>`;
-
-      tr.innerHTML = `
-        <td class="py-3 pr-3 mono whitespace-nowrap">${escapeHtml(lesson.date || "")}</td>
-        <td class="py-3 pr-3">${escapeHtml(studentName(lesson.studentId))}</td>
-        <td class="py-3 pr-3">${bookCell}</td>
-        <td class="py-3 pr-3">${escapeHtml(lesson.hw || "")}</td>
-        <td class="py-3 pr-3">${escapeHtml(lesson.stop || "")}</td>
-        <td class="py-3 pr-0 text-right whitespace-nowrap">
-          <button type="button" data-act="edit" data-id="${lesson.id}"
-            class="px-3 py-1 rounded-xl bg-white/80 border border-slate-200 hover:bg-white">✏️</button>
-          <button type="button" data-act="del" data-id="${lesson.id}"
-            class="px-3 py-1 rounded-xl bg-white/80 border border-rose-200 text-rose-700 hover:bg-white">🗑️</button>
-        </td>
-      `;
-    } else {
-      tr.innerHTML = `
-        <td class="py-3 pr-3">
-          <input data-ed="date" type="date" value="${escapeHtml(editingDraft.date || "")}"
-            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring mono" />
-        </td>
-
-        <td class="py-3 pr-3">
-          <select data-ed="student"
-            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring">
-            ${state.students.map(s =>
-              `<option value="${s.id}" ${s.id===editingDraft.studentId?'selected':''}>${escapeHtml(s.name)}</option>`
-            ).join("")}
-          </select>
-        </td>
-
-        <td class="py-3 pr-3">
-          <select data-ed="book"
-            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring">
-            ${state.books.map(b =>
-              `<option value="${b.id}" ${b.id===editingDraft.bookId?'selected':''}>${escapeHtml(b.name)}</option>`
-            ).join("")}
-          </select>
-        </td>
-
-        <td class="py-3 pr-3">
-          <input data-ed="hw" type="text" value="${escapeHtml(editingDraft.hw || "")}"
-            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring" />
-        </td>
-
-        <td class="py-3 pr-3">
-          <input data-ed="stop" type="text" value="${escapeHtml(editingDraft.stop || "")}"
-            class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring" />
-        </td>
-
-        <td class="py-3 pr-0 text-right whitespace-nowrap">
-          <button type="button" data-act="save" data-id="${lesson.id}"
-            class="px-3 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">✅</button>
-          <button type="button" data-act="cancel" data-id="${lesson.id}"
-            class="px-3 py-1 rounded-xl bg-white/80 border border-slate-200 hover:bg-white">✖</button>
-        </td>
-      `;
+  function renderFilterStudent() {
+    const current = filterStudent.value;
+    filterStudent.innerHTML = `<option value="">Все ученики</option>`;
+    for (const s of state.students) {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = s.name;
+      filterStudent.appendChild(opt);
     }
-
-    lessonsTbody.appendChild(tr);
-  }
-}
-
-/** ============================
- *  Init
- *  ============================ */
-dateInput.value = todayISO();
-
-function refreshAll() {
-  renderSelect(studentSelect, state.students, "Выбери ученика");
-  renderSelect(bookSelect, state.books, "Выбери учебник");
-
-  if (!studentSelect.disabled) studentSelect.value = state.students[0]?.id || "";
-  if (!bookSelect.disabled) bookSelect.value = state.books[0]?.id || "";
-
-  renderFilterStudent();
-  renderLessons();
-  saveState().catch(()=>{});
-}
-refreshAll();
-
-/** ============================
- *  Add lesson
- *  ============================ */
-lessonForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  if (state.students.length === 0 || state.books.length === 0) {
-    alert("Сначала добавь учеников и учебники.");
-    return;
-  }
-  const studentId = studentSelect.value || state.students[0]?.id;
-  const bookId = bookSelect.value || state.books[0]?.id;
-  const date = dateInput.value || todayISO();
-  const hw = hwInput.value.trim();
-  const stop = stopInput.value.trim();
-
-  if (!studentId || !bookId) { alert("Выбери ученика и учебник."); return; }
-
-  state.lessons.push({ id: uid(), studentId, bookId, date, hw, stop });
-  saveState().catch(()=>{});
-
-  hwInput.value = "";
-  stopInput.value = "";
-  renderLessons();
-});
-
-/** ============================
- *  Lesson actions
- *  ============================ */
-lessonsTbody.addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-act]");
-  if (!btn) return;
-
-  const act = btn.dataset.act;
-  const id = btn.dataset.id;
-  const lesson = state.lessons.find(x => x.id === id);
-  if (!lesson) return;
-
-  if (act === "del") {
-    if (!confirm("Удалить запись?")) return;
-    state.lessons = state.lessons.filter(x => x.id !== id);
-    saveState().catch(()=>{});
-    if (editingLessonId === id) cancelEditLesson();
-    else renderLessons();
-    return;
+    filterStudent.value = current || "";
   }
 
-  if (act === "edit") startEditLesson(id);
-  if (act === "cancel") cancelEditLesson();
-  if (act === "save") saveEditLesson();
-});
+  function studentName(id){ return (state.students.find(s=>s.id===id)||{}).name || "—"; }
+  function bookById(id){ return state.books.find(b=>b.id===id) || {name:"—", pdfName:""}; }
 
-lessonsTbody.addEventListener("input", (e) => {
-  if (!editingLessonId || !editingDraft) return;
-  const el = e.target;
-  const key = el.getAttribute("data-ed");
-  if (!key) return;
+  function bookHref(book) {
+    if (!book.pdfName) return "";
+    return "./" + encodeURIComponent(book.pdfName);
+  }
 
-  if (key === "date") editingDraft.date = el.value;
-  if (key === "student") editingDraft.studentId = el.value;
-  if (key === "book") editingDraft.bookId = el.value;
-  if (key === "hw") editingDraft.hw = el.value;
-  if (key === "stop") editingDraft.stop = el.value;
-});
+  function lessonMatchesFilters(lesson) {
+    const fs = filterStudent.value;
+    const fd = filterDate.value;
+    const q = (filterQuery.value || "").trim().toLowerCase();
 
-/** ============================
- *  Filters
- *  ============================ */
-filterStudent.addEventListener("change", renderLessons);
-filterDate.addEventListener("change", renderLessons);
-filterQuery.addEventListener("input", renderLessons);
-btnClearDate.addEventListener("click", () => { filterDate.value = ""; renderLessons(); });
+    if (fs && lesson.studentId !== fs) return false;
+    if (fd && lesson.date !== fd) return false;
+    if (q) {
+      const hay = `${lesson.hw || ""} ${lesson.stop || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }
 
-btnClearAll.addEventListener("click", () => {
-  if (state.lessons.length === 0) return;
-  if (!confirm("Точно очистить всю историю занятий?")) return;
-  state.lessons = [];
-  saveState().catch(()=>{});
-  cancelEditLesson();
-});
+  /** ============================
+   *  Inline editing for lessons
+   *  ============================ */
+  let editingLessonId = null;
+  let editingDraft = null;
 
-/** ============================
- *  Modal management (WORKING)
- *  ============================ */
-const modalBackdrop = document.getElementById("modalBackdrop");
-const modalTitle = document.getElementById("modalTitle");
-const modalSubtitle = document.getElementById("modalSubtitle");
-const modalClose = document.getElementById("modalClose");
-const modalDone = document.getElementById("modalDone");
-const modalList = document.getElementById("modalList");
+  function startEditLesson(id){
+    if (editingLessonId && editingLessonId !== id) cancelEditLesson();
+    const lesson = state.lessons.find(l=>l.id===id);
+    if (!lesson) return;
+    editingLessonId = id;
+    editingDraft = JSON.parse(JSON.stringify(lesson));
+    renderLessons();
+  }
+  function cancelEditLesson(){
+    editingLessonId = null;
+    editingDraft = null;
+    renderLessons();
+  }
+  function saveEditLesson(){
+    if (!editingLessonId || !editingDraft) return;
+    const idx = state.lessons.findIndex(l=>l.id===editingLessonId);
+    if (idx < 0) return;
+    state.lessons[idx] = editingDraft;
+    persist();
+    editingLessonId = null;
+    editingDraft = null;
+    renderLessons();
+  }
 
-const modalNewName = document.getElementById("modalNewName");
-const modalPdfArea = document.getElementById("modalPdfArea");
-const modalNewPdfLabel = document.getElementById("modalNewPdfLabel");
-const modalNewPdfPick = document.getElementById("modalNewPdfPick");
-const modalAddBtn = document.getElementById("modalAddBtn");
+  function renderLessons() {
+    const filtered = state.lessons
+      .slice()
+      .sort((a,b) => (b.date||"").localeCompare(a.date||""))
+      .filter(lessonMatchesFilters);
 
-let modalMode = "students"; // "students" | "books"
-let newBookPdfName = "";
+    lessonsTbody.innerHTML = "";
+    emptyState.classList.toggle("hidden", state.lessons.length !== 0);
 
-// inline edit
-let editingStudentId = null;
-let editingStudentDraft = null; // { name }
+    for (const lesson of filtered) {
+      const isEditing = lesson.id === editingLessonId;
+      const tr = document.createElement("tr");
+      tr.className = "border-t border-white/60 hover:bg-white/40";
 
-let editingBookId = null;
-let editingBookDraft = null; // { name, pdfName }
+      if (!isEditing) {
+        const book = bookById(lesson.bookId);
+        const href = bookHref(book);
+        const bookCell = href
+          ? `<a class="linkish text-indigo-700 hover:text-indigo-900" href="${href}" target="_blank" rel="noopener">${escapeHtml(book.name)}</a>`
+          : `<span>${escapeHtml(book.name)}</span>`;
 
-function bookHrefByPdfName(pdfName) {
-  if (!pdfName) return "";
-  return "./" + encodeURIComponent(pdfName);
-}
+        tr.innerHTML = `
+          <td class="py-3 pr-3 mono whitespace-nowrap">${escapeHtml(lesson.date || "")}</td>
+          <td class="py-3 pr-3">${escapeHtml(studentName(lesson.studentId))}</td>
+          <td class="py-3 pr-3">${bookCell}</td>
+          <td class="py-3 pr-3">${escapeHtml(lesson.hw || "")}</td>
+          <td class="py-3 pr-3">${escapeHtml(lesson.stop || "")}</td>
+          <td class="py-3 pr-0 text-right whitespace-nowrap">
+            <button type="button" data-act="edit" data-id="${lesson.id}"
+              class="px-3 py-1 rounded-xl bg-white/80 border border-slate-200 hover:bg-white">✏️</button>
+            <button type="button" data-act="del" data-id="${lesson.id}"
+              class="px-3 py-1 rounded-xl bg-white/80 border border-rose-200 text-rose-700 hover:bg-white">🗑️</button>
+          </td>
+        `;
+      } else {
+        tr.innerHTML = `
+          <td class="py-3 pr-3">
+            <input data-ed="date" type="date" value="${escapeHtml(editingDraft.date || "")}"
+              class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring mono" />
+          </td>
 
-function openModal(mode) {
-  modalMode = mode;
+          <td class="py-3 pr-3">
+            <select data-ed="student"
+              class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring">
+              ${state.students.map(s =>
+                `<option value="${s.id}" ${s.id===editingDraft.studentId?'selected':''}>${escapeHtml(s.name)}</option>`
+              ).join("")}
+            </select>
+          </td>
 
-  editingStudentId = null;
-  editingStudentDraft = null;
-  editingBookId = null;
-  editingBookDraft = null;
+          <td class="py-3 pr-3">
+            <select data-ed="book"
+              class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring">
+              ${state.books.map(b =>
+                `<option value="${b.id}" ${b.id===editingDraft.bookId?'selected':''}>${escapeHtml(b.name)}</option>`
+              ).join("")}
+            </select>
+          </td>
 
-  modalNewName.value = "";
-  newBookPdfName = "";
-  modalNewPdfLabel.value = "PDF не выбран";
-  modalNewPdfPick.value = "";
+          <td class="py-3 pr-3">
+            <input data-ed="hw" type="text" value="${escapeHtml(editingDraft.hw || "")}"
+              class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring" />
+          </td>
 
-  const isStudents = mode === "students";
-  modalTitle.textContent = isStudents ? "Ученики" : "Учебники (PDF)";
-  modalSubtitle.textContent = isStudents
-    ? "Добавляй/редактируй/удаляй учеников (Имя Фамилия)"
-    : "PDF выбирается из папки рядом с diary.html. Сохраняется имя файла, открывается по клику в истории.";
+          <td class="py-3 pr-3">
+            <input data-ed="stop" type="text" value="${escapeHtml(editingDraft.stop || "")}"
+              class="w-full min-w-0 px-3 py-2 rounded-xl border border-slate-200 bg-white focus-ring" />
+          </td>
 
-  modalPdfArea.classList.toggle("hidden", isStudents);
+          <td class="py-3 pr-0 text-right whitespace-nowrap">
+            <button type="button" data-act="save" data-id="${lesson.id}"
+              class="px-3 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">✅</button>
+            <button type="button" data-act="cancel" data-id="${lesson.id}"
+              class="px-3 py-1 rounded-xl bg-white/80 border border-slate-200 hover:bg-white">✖</button>
+          </td>
+        `;
+      }
 
-  renderModalList();
-  modalBackdrop.classList.remove("hidden");
-  setTimeout(() => modalNewName.focus(), 50);
-}
+      lessonsTbody.appendChild(tr);
+    }
+  }
 
-function closeModal() {
-  modalBackdrop.classList.add("hidden");
+  /** ============================
+   *  Init
+   *  ============================ */
+  dateInput.value = todayISO();
+
+  function refreshAll() {
+    renderSelect(studentSelect, state.students, "Выбери ученика");
+    renderSelect(bookSelect, state.books, "Выбери учебник");
+
+    if (!studentSelect.disabled) studentSelect.value = state.students[0]?.id || "";
+    if (!bookSelect.disabled) bookSelect.value = state.books[0]?.id || "";
+
+    renderFilterStudent();
+    renderLessons();
+  }
   refreshAll();
-}
 
-function renderModalList() {
-  modalList.innerHTML = "";
-
-  // ===== STUDENTS =====
-  if (modalMode === "students") {
-    if (state.students.length === 0) {
-      modalList.innerHTML = `<div class="text-sm text-slate-600">Пока пусто. Добавь первого ученика выше.</div>`;
+  /** ============================
+   *  Add lesson
+   *  ============================ */
+  lessonForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (state.students.length === 0 || state.books.length === 0) {
+      alert("Сначала добавь учеников и учебники.");
       return;
     }
 
-    for (const s of state.students) {
-      const isEditing = s.id === editingStudentId;
+    const studentId = studentSelect.value || state.students[0]?.id;
+    const bookId = bookSelect.value || state.books[0]?.id;
+    const date = dateInput.value || todayISO();
+    const hw = hwInput.value.trim();
+    const stop = stopInput.value.trim();
+
+    if (!studentId || !bookId) { alert("Выбери ученика и учебник."); return; }
+
+    state.lessons.push({ id: uid(), studentId, bookId, date, hw, stop });
+    persist();
+
+    hwInput.value = "";
+    stopInput.value = "";
+    renderLessons();
+  });
+
+  /** ============================
+   *  Lesson actions
+   *  ============================ */
+  lessonsTbody.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+
+    const act = btn.dataset.act;
+    const id = btn.dataset.id;
+    const lesson = state.lessons.find(x => x.id === id);
+    if (!lesson) return;
+
+    if (act === "del") {
+      if (!confirm("Удалить запись?")) return;
+      state.lessons = state.lessons.filter(x => x.id !== id);
+      persist();
+      if (editingLessonId === id) cancelEditLesson();
+      else renderLessons();
+      return;
+    }
+
+    if (act === "edit") startEditLesson(id);
+    if (act === "cancel") cancelEditLesson();
+    if (act === "save") saveEditLesson();
+  });
+
+  lessonsTbody.addEventListener("input", (e) => {
+    if (!editingLessonId || !editingDraft) return;
+    const el = e.target;
+    const key = el.getAttribute("data-ed");
+    if (!key) return;
+
+    if (key === "date") editingDraft.date = el.value;
+    if (key === "student") editingDraft.studentId = el.value;
+    if (key === "book") editingDraft.bookId = el.value;
+    if (key === "hw") editingDraft.hw = el.value;
+    if (key === "stop") editingDraft.stop = el.value;
+  });
+
+  /** ============================
+   *  Filters
+   *  ============================ */
+  filterStudent.addEventListener("change", renderLessons);
+  filterDate.addEventListener("change", renderLessons);
+  filterQuery.addEventListener("input", renderLessons);
+  btnClearDate.addEventListener("click", () => { filterDate.value = ""; renderLessons(); });
+
+  btnClearAll.addEventListener("click", () => {
+    if (state.lessons.length === 0) return;
+    if (!confirm("Точно очистить всю историю занятий?")) return;
+    state.lessons = [];
+    persist();
+    cancelEditLesson();
+  });
+
+  /** ============================
+   *  Modal management
+   *  ============================ */
+  const modalBackdrop = document.getElementById("modalBackdrop");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalSubtitle = document.getElementById("modalSubtitle");
+  const modalClose = document.getElementById("modalClose");
+  const modalDone = document.getElementById("modalDone");
+  const modalList = document.getElementById("modalList");
+
+  const modalNewName = document.getElementById("modalNewName");
+  const modalPdfArea = document.getElementById("modalPdfArea");
+  const modalNewPdfLabel = document.getElementById("modalNewPdfLabel");
+  const modalNewPdfPick = document.getElementById("modalNewPdfPick");
+  const modalAddBtn = document.getElementById("modalAddBtn");
+
+  let modalMode = "students"; // "students" | "books"
+  let newBookPdfName = "";
+
+  let editingStudentId = null;
+  let editingStudentDraft = null;
+
+  let editingBookId = null;
+  let editingBookDraft = null;
+
+  function bookHrefByPdfName(pdfName) {
+    if (!pdfName) return "";
+    return "./" + encodeURIComponent(pdfName);
+  }
+
+  function openModal(mode) {
+    modalMode = mode;
+
+    editingStudentId = null;
+    editingStudentDraft = null;
+    editingBookId = null;
+    editingBookDraft = null;
+
+    modalNewName.value = "";
+    newBookPdfName = "";
+    modalNewPdfLabel.value = "PDF не выбран";
+    modalNewPdfPick.value = "";
+
+    const isStudents = mode === "students";
+    modalTitle.textContent = isStudents ? "Ученики" : "Учебники (PDF)";
+    modalSubtitle.textContent = isStudents
+      ? "Добавляй/редактируй/удаляй учеников (Имя Фамилия)"
+      : "PDF выбирается из папки рядом с diary.html. Сохраняется имя файла, открывается по клику в истории.";
+
+    modalPdfArea.classList.toggle("hidden", isStudents);
+
+    renderModalList();
+    modalBackdrop.classList.remove("hidden");
+    setTimeout(() => modalNewName.focus(), 50);
+  }
+
+  function closeModal() {
+    modalBackdrop.classList.add("hidden");
+    refreshAll();
+  }
+
+  function renderModalList() {
+    modalList.innerHTML = "";
+
+    if (modalMode === "students") {
+      if (state.students.length === 0) {
+        modalList.innerHTML = `<div class="text-sm text-slate-600">Пока пусто. Добавь первого ученика выше.</div>`;
+        return;
+      }
+
+      for (const s of state.students) {
+        const isEditing = s.id === editingStudentId;
+
+        const row = document.createElement("div");
+        row.className = "rounded-2xl border border-white/60 bg-white/55 p-4";
+
+        if (!isEditing) {
+          row.innerHTML = `
+            <div class="flex items-center gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-slate-600 mb-1">Ученик</div>
+                <div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-white truncate">
+                  ${escapeHtml(s.name)}
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <button type="button" data-stu-act="edit" data-id="${s.id}"
+                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
+                  title="Редактировать">✏️</button>
+
+                <button type="button" data-del-stu="${s.id}"
+                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-700 hover:bg-white shadow-soft"
+                  title="Удалить">🗑️</button>
+              </div>
+            </div>
+          `;
+        } else {
+          row.innerHTML = `
+            <div class="flex items-center gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-medium text-slate-600 mb-1">Ученик</div>
+                <input type="text" data-stu-edit="name"
+                  class="h-11 w-full px-3 rounded-xl border border-slate-200 bg-white focus-ring"
+                  value="${escapeHtml(editingStudentDraft?.name ?? s.name)}" />
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <button type="button" data-stu-act="save" data-id="${s.id}"
+                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-soft"
+                  title="Сохранить">✅</button>
+
+                <button type="button" data-stu-act="cancel" data-id="${s.id}"
+                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
+                  title="Отмена">✖</button>
+              </div>
+            </div>
+          `;
+        }
+
+        modalList.appendChild(row);
+      }
+      return;
+    }
+
+    // BOOKS
+    if (state.books.length === 0) {
+      modalList.innerHTML = `<div class="text-sm text-slate-600">Пока пусто. Добавь первый учебник выше.</div>`;
+      return;
+    }
+
+    for (const b of state.books) {
+      const isEditing = b.id === editingBookId;
+      const draft = isEditing ? (editingBookDraft || { name: b.name, pdfName: b.pdfName || "" }) : null;
+
+      const nameText = isEditing ? (draft.name || "") : (b.name || "");
+      const pdfText = isEditing ? (draft.pdfName || "") : (b.pdfName || "");
+      const href = bookHrefByPdfName(pdfText);
 
       const row = document.createElement("div");
       row.className = "rounded-2xl border border-white/60 bg-white/55 p-4";
 
-      if (!isEditing) {
-        row.innerHTML = `
-          <div class="flex items-center gap-3">
-            <div class="flex-1 min-w-0">
-              <div class="text-xs font-medium text-slate-600 mb-1">Ученик</div>
-              <div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-white truncate">
-                ${escapeHtml(s.name)}
-              </div>
-            </div>
+      row.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="flex-[0.95] min-w-0">
+            <div class="text-xs font-medium text-slate-600 mb-1">Учебник</div>
+            ${
+              isEditing
+                ? `<input type="text" data-book-edit="name"
+                     class="h-11 w-full px-3 rounded-xl border border-slate-200 bg-white focus-ring"
+                     value="${escapeHtml(nameText)}" />`
+                : `<div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-white truncate">
+                     ${escapeHtml(nameText)}
+                   </div>`
+            }
+          </div>
 
-            <div class="flex items-center gap-2 shrink-0">
-              <button type="button" data-stu-act="edit" data-id="${s.id}"
-                class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
-                title="Редактировать">✏️</button>
-
-              <button type="button" data-del-stu="${s.id}"
-                class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-700 hover:bg-white shadow-soft"
-                title="Удалить">🗑️</button>
+          <div class="flex-[1.05] min-w-0">
+            <div class="text-xs font-medium text-slate-600 mb-1">PDF</div>
+            <div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 truncate">
+              ${escapeHtml(pdfText || "PDF не выбран")}
             </div>
           </div>
-        `;
-      } else {
-        row.innerHTML = `
-          <div class="flex items-center gap-3">
-            <div class="flex-1 min-w-0">
-              <div class="text-xs font-medium text-slate-600 mb-1">Ученик</div>
-              <input type="text" data-stu-edit="name"
-                class="h-11 w-full px-3 rounded-xl border border-slate-200 bg-white focus-ring"
-                value="${escapeHtml(editingStudentDraft?.name ?? s.name)}" />
-            </div>
 
-            <div class="flex items-center gap-2 shrink-0">
-              <button type="button" data-stu-act="save" data-id="${s.id}"
-                class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-soft"
-                title="Сохранить">✅</button>
+          <div class="shrink-0 w-[264px] flex items-center justify-end gap-2">
+            <label class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-50 shadow-soft cursor-pointer"
+                   title="Выбрать PDF">
+              📎
+              <input data-book-pick="${b.id}" type="file" accept="application/pdf" class="hidden">
+            </label>
 
-              <button type="button" data-stu-act="cancel" data-id="${s.id}"
-                class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
-                title="Отмена">✖</button>
-            </div>
+            <a class="h-11 w-[110px] inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-50 shadow-soft whitespace-nowrap
+                ${href ? "linkish text-indigo-700" : "pointer-events-none opacity-40"}"
+              ${href ? `href="${href}" target="_blank" rel="noopener"` : ""}>
+              Открыть
+            </a>
+
+            ${
+              isEditing
+                ? `
+                  <button type="button" data-book-act="save" data-id="${b.id}"
+                    class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-soft"
+                    title="Сохранить">✅</button>
+
+                  <button type="button" data-book-act="cancel" data-id="${b.id}"
+                    class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
+                    title="Отмена">✖</button>
+                `
+                : `
+                  <button type="button" data-book-act="edit" data-id="${b.id}"
+                    class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
+                    title="Редактировать">✏️</button>
+
+                  <button type="button" data-del-book="${b.id}"
+                    class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-700 hover:bg-white shadow-soft"
+                    title="Удалить">🗑️</button>
+                `
+            }
           </div>
-        `;
-      }
+        </div>
+      `;
 
       modalList.appendChild(row);
     }
-    return;
   }
 
-  // ===== BOOKS =====
-  if (state.books.length === 0) {
-    modalList.innerHTML = `<div class="text-sm text-slate-600">Пока пусто. Добавь первый учебник выше.</div>`;
-    return;
-  }
+  modalNewPdfPick.addEventListener("change", () => {
+    const f = modalNewPdfPick.files?.[0];
+    if (!f) return;
+    newBookPdfName = f.name;
+    modalNewPdfLabel.value = f.name;
+  });
 
-  for (const b of state.books) {
-    const isEditing = b.id === editingBookId;
-    const draft = isEditing ? (editingBookDraft || { name: b.name, pdfName: b.pdfName || "" }) : null;
+  modalAddBtn.addEventListener("click", () => {
+    const name = modalNewName.value.trim();
+    if (!name) return;
 
-    const nameText = isEditing ? (draft.name || "") : (b.name || "");
-    const pdfText = isEditing ? (draft.pdfName || "") : (b.pdfName || "");
-    const href = bookHrefByPdfName(pdfText);
-
-    const row = document.createElement("div");
-    row.className = "rounded-2xl border border-white/60 bg-white/55 p-4";
-
-    row.innerHTML = `
-      <div class="flex items-center gap-3">
-        <div class="flex-[0.95] min-w-0">
-          <div class="text-xs font-medium text-slate-600 mb-1">Учебник</div>
-          ${
-            isEditing
-              ? `<input type="text" data-book-edit="name"
-                   class="h-11 w-full px-3 rounded-xl border border-slate-200 bg-white focus-ring"
-                   value="${escapeHtml(nameText)}" />`
-              : `<div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-white truncate">
-                   ${escapeHtml(nameText)}
-                 </div>`
-          }
-        </div>
-
-        <div class="flex-[1.05] min-w-0">
-          <div class="text-xs font-medium text-slate-600 mb-1">PDF</div>
-          <div class="h-11 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 truncate">
-            ${escapeHtml(pdfText || "PDF не выбран")}
-          </div>
-        </div>
-
-        <div class="shrink-0 w-[264px] flex items-center justify-end gap-2">
-          <label class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-50 shadow-soft cursor-pointer"
-                 title="Выбрать PDF">
-            📎
-            <input data-book-pick="${b.id}" type="file" accept="application/pdf" class="hidden">
-          </label>
-
-          <a class="h-11 w-[110px] inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-50 shadow-soft whitespace-nowrap
-              ${href ? "linkish text-indigo-700" : "pointer-events-none opacity-40"}"
-            ${href ? `href="${href}" target="_blank" rel="noopener"` : ""}>
-            Открыть
-          </a>
-
-          ${
-            isEditing
-              ? `
-                <button type="button" data-book-act="save" data-id="${b.id}"
-                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-soft"
-                  title="Сохранить">✅</button>
-
-                <button type="button" data-book-act="cancel" data-id="${b.id}"
-                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
-                  title="Отмена">✖</button>
-              `
-              : `
-                <button type="button" data-book-act="edit" data-id="${b.id}"
-                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-white shadow-soft"
-                  title="Редактировать">✏️</button>
-
-                <button type="button" data-del-book="${b.id}"
-                  class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-rose-200 text-rose-700 hover:bg-white shadow-soft"
-                  title="Удалить">🗑️</button>
-              `
-          }
-        </div>
-      </div>
-    `;
-
-    modalList.appendChild(row);
-  }
-}
-
-// pick PDF in top add-area
-modalNewPdfPick.addEventListener("change", () => {
-  const f = modalNewPdfPick.files?.[0];
-  if (!f) return;
-  newBookPdfName = f.name;
-  modalNewPdfLabel.value = f.name;
-});
-
-// add new
-modalAddBtn.addEventListener("click", () => {
-  const name = modalNewName.value.trim();
-  if (!name) return;
-
-  if (modalMode === "students") {
-    if (state.students.some(x => (x.name || "").trim().toLowerCase() === name.toLowerCase())) {
-      alert("Такой ученик уже есть.");
-      return;
-    }
-    state.students.push({ id: uid(), name });
-    saveState().catch(()=>{});
-    modalNewName.value = "";
-    renderModalList();
-    refreshAll();
-    return;
-  }
-
-  if (state.books.some(x => (x.name || "").trim().toLowerCase() === name.toLowerCase())) {
-    alert("Такой учебник уже есть.");
-    return;
-  }
-  state.books.push({ id: uid(), name, pdfName: newBookPdfName || "" });
-  saveState().catch(()=>{});
-
-  modalNewName.value = "";
-  newBookPdfName = "";
-  modalNewPdfLabel.value = "PDF не выбран";
-  modalNewPdfPick.value = "";
-
-  renderModalList();
-  refreshAll();
-});
-
-// live typing drafts
-modalList.addEventListener("input", (e) => {
-  if (modalMode === "students" && editingStudentId) {
-    if (e.target.getAttribute("data-stu-edit") === "name") {
-      editingStudentDraft.name = e.target.value;
-    }
-    return;
-  }
-  if (modalMode === "books" && editingBookId) {
-    if (e.target.getAttribute("data-book-edit") === "name") {
-      editingBookDraft.name = e.target.value;
-    }
-    return;
-  }
-});
-
-// pick PDF per book
-modalList.addEventListener("change", (e) => {
-  const pickId = e.target.getAttribute("data-book-pick");
-  if (!pickId) return;
-
-  const f = e.target.files?.[0];
-  if (!f) return;
-
-  const b = state.books.find(x => x.id === pickId);
-  if (!b) return;
-
-  editingBookId = pickId;
-  editingBookDraft = { name: b.name, pdfName: f.name };
-  renderModalList();
-});
-
-// click actions
-modalList.addEventListener("click", (e) => {
-  // delete student
-  const delStuBtn = e.target.closest("button[data-del-stu]");
-  if (delStuBtn) {
-    const id = delStuBtn.getAttribute("data-del-stu");
-    const used = state.lessons.some(l => l.studentId === id);
-    if (used) { alert("Нельзя удалить: ученик используется в истории."); return; }
-    if (!confirm("Удалить ученика?")) return;
-
-    state.students = state.students.filter(x => x.id !== id);
-    saveState().catch(()=>{});
-    refreshAll();
-    renderModalList();
-    return;
-  }
-
-  // student actions
-  const stuActBtn = e.target.closest("button[data-stu-act]");
-  if (stuActBtn) {
-    const act = stuActBtn.getAttribute("data-stu-act");
-    const id = stuActBtn.getAttribute("data-id");
-    const s = state.students.find(x => x.id === id);
-    if (!s) return;
-
-    if (act === "edit") {
-      editingStudentId = id;
-      editingStudentDraft = { name: s.name };
+    if (modalMode === "students") {
+      if (state.students.some(x => (x.name || "").trim().toLowerCase() === name.toLowerCase())) {
+        alert("Такой ученик уже есть.");
+        return;
+      }
+      state.students.push({ id: uid(), name });
+      persist();
+      modalNewName.value = "";
       renderModalList();
-      return;
-    }
-    if (act === "cancel") {
-      editingStudentId = null;
-      editingStudentDraft = null;
-      renderModalList();
-      return;
-    }
-    if (act === "save") {
-      const newName = (editingStudentDraft?.name || "").trim();
-      if (!newName) { alert("Имя не может быть пустым."); return; }
-
-      const dup = state.students.some(x =>
-        x.id !== id && (x.name || "").trim().toLowerCase() === newName.toLowerCase()
-      );
-      if (dup) { alert("Такой ученик уже есть. Добавь номер (Соня 2)."); return; }
-
-      s.name = newName;
-      saveState().catch(()=>{});
       refreshAll();
-
-      editingStudentId = null;
-      editingStudentDraft = null;
-      renderModalList();
       return;
     }
-  }
 
-  // delete book
-  const delBookBtn = e.target.closest("button[data-del-book]");
-  if (delBookBtn) {
-    const id = delBookBtn.getAttribute("data-del-book");
-    const used = state.lessons.some(l => l.bookId === id);
-    if (used) { alert("Нельзя удалить: учебник используется в истории."); return; }
-    if (!confirm("Удалить учебник?")) return;
+    if (state.books.some(x => (x.name || "").trim().toLowerCase() === name.toLowerCase())) {
+      alert("Такой учебник уже есть.");
+      return;
+    }
+    state.books.push({ id: uid(), name, pdfName: newBookPdfName || "" });
+    persist();
 
-    state.books = state.books.filter(x => x.id !== id);
-    saveState().catch(()=>{});
-    refreshAll();
+    modalNewName.value = "";
+    newBookPdfName = "";
+    modalNewPdfLabel.value = "PDF не выбран";
+    modalNewPdfPick.value = "";
+
     renderModalList();
-    return;
-  }
+    refreshAll();
+  });
 
-  // book actions
-  const bookActBtn = e.target.closest("button[data-book-act]");
-  if (bookActBtn) {
-    const act = bookActBtn.getAttribute("data-book-act");
-    const id = bookActBtn.getAttribute("data-id");
-    const b = state.books.find(x => x.id === id);
+  modalList.addEventListener("input", (e) => {
+    if (modalMode === "students" && editingStudentId) {
+      if (e.target.getAttribute("data-stu-edit") === "name") {
+        editingStudentDraft.name = e.target.value;
+      }
+      return;
+    }
+    if (modalMode === "books" && editingBookId) {
+      if (e.target.getAttribute("data-book-edit") === "name") {
+        editingBookDraft.name = e.target.value;
+      }
+      return;
+    }
+  });
+
+  modalList.addEventListener("change", (e) => {
+    const pickId = e.target.getAttribute("data-book-pick");
+    if (!pickId) return;
+
+    const f = e.target.files?.[0];
+    if (!f) return;
+
+    const b = state.books.find(x => x.id === pickId);
     if (!b) return;
 
-    if (act === "edit") {
-      editingBookId = id;
-      editingBookDraft = { name: b.name, pdfName: b.pdfName || "" };
-      renderModalList();
-      return;
-    }
-    if (act === "cancel") {
-      editingBookId = null;
-      editingBookDraft = null;
-      renderModalList();
-      return;
-    }
-    if (act === "save") {
-      const newName = (editingBookDraft?.name || "").trim();
-      const newPdf = (editingBookDraft?.pdfName || "").trim();
-      if (!newName) { alert("Название не может быть пустым."); return; }
+    editingBookId = pickId;
+    editingBookDraft = { name: b.name, pdfName: f.name };
+    renderModalList();
+  });
 
-      const dup = state.books.some(x =>
-        x.id !== id && (x.name || "").trim().toLowerCase() === newName.toLowerCase()
-      );
-      if (dup) { alert("Такой учебник уже есть."); return; }
+  modalList.addEventListener("click", (e) => {
+    const delStuBtn = e.target.closest("button[data-del-stu]");
+    if (delStuBtn) {
+      const id = delStuBtn.getAttribute("data-del-stu");
+      const used = state.lessons.some(l => l.studentId === id);
+      if (used) { alert("Нельзя удалить: ученик используется в истории."); return; }
+      if (!confirm("Удалить ученика?")) return;
 
-      b.name = newName;
-      b.pdfName = newPdf;
-
-      saveState().catch(()=>{});
+      state.students = state.students.filter(x => x.id !== id);
+      persist();
       refreshAll();
-
-      editingBookId = null;
-      editingBookDraft = null;
       renderModalList();
       return;
     }
-  }
-});
 
-modalClose.addEventListener("click", closeModal);
-modalDone.addEventListener("click", closeModal);
-modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
+    const stuActBtn = e.target.closest("button[data-stu-act]");
+    if (stuActBtn) {
+      const act = stuActBtn.getAttribute("data-stu-act");
+      const id = stuActBtn.getAttribute("data-id");
+      const s = state.students.find(x => x.id === id);
+      if (!s) return;
 
-btnManageStudents.addEventListener("click", () => openModal("students"));
-btnManageBooks.addEventListener("click", () => openModal("books"));
+      if (act === "edit") {
+        editingStudentId = id;
+        editingStudentDraft = { name: s.name };
+        renderModalList();
+        return;
+      }
+      if (act === "cancel") {
+        editingStudentId = null;
+        editingStudentDraft = null;
+        renderModalList();
+        return;
+      }
+      if (act === "save") {
+        const newName = (editingStudentDraft?.name || "").trim();
+        if (!newName) { alert("Имя не может быть пустым."); return; }
 
-/** ============================
- *  Export / Import
- *  ============================ */
-btnExport.addEventListener("click", () => {
-  const data = JSON.stringify(state, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
+        const dup = state.students.some(x =>
+          x.id !== id && (x.name || "").trim().toLowerCase() === newName.toLowerCase()
+        );
+        if (dup) { alert("Такой ученик уже есть. Добавь номер (Соня 2)."); return; }
 
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `diary-backup-${todayISO()}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-});
+        s.name = newName;
+        persist();
+        refreshAll();
 
-fileImport.addEventListener("change", async () => {
-  const file = fileImport.files?.[0];
-  if (!file) return;
-
-  try {
-    const text = await file.text();
-    const imported = JSON.parse(text);
-
-    if (!imported || typeof imported !== "object") throw new Error("bad");
-    if (!Array.isArray(imported.students) || !Array.isArray(imported.books) || !Array.isArray(imported.lessons)) {
-      throw new Error("bad");
+        editingStudentId = null;
+        editingStudentDraft = null;
+        renderModalList();
+        return;
+      }
     }
 
-    state = imported;
-    saveState().catch(()=>{});
-    refreshAll();
-    alert("Импорт выполнен ✅");
-  } catch {
-    alert("Не удалось импортировать: файл некорректный.");
-  } finally {
-    fileImport.value = "";
+    const delBookBtn = e.target.closest("button[data-del-book]");
+    if (delBookBtn) {
+      const id = delBookBtn.getAttribute("data-del-book");
+      const used = state.lessons.some(l => l.bookId === id);
+      if (used) { alert("Нельзя удалить: учебник используется в истории."); return; }
+      if (!confirm("Удалить учебник?")) return;
+
+      state.books = state.books.filter(x => x.id !== id);
+      persist();
+      refreshAll();
+      renderModalList();
+      return;
+    }
+
+    const bookActBtn = e.target.closest("button[data-book-act]");
+    if (bookActBtn) {
+      const act = bookActBtn.getAttribute("data-book-act");
+      const id = bookActBtn.getAttribute("data-id");
+      const b = state.books.find(x => x.id === id);
+      if (!b) return;
+
+      if (act === "edit") {
+        editingBookId = id;
+        editingBookDraft = { name: b.name, pdfName: b.pdfName || "" };
+        renderModalList();
+        return;
+      }
+      if (act === "cancel") {
+        editingBookId = null;
+        editingBookDraft = null;
+        renderModalList();
+        return;
+      }
+      if (act === "save") {
+        const newName = (editingBookDraft?.name || "").trim();
+        const newPdf = (editingBookDraft?.pdfName || "").trim();
+        if (!newName) { alert("Название не может быть пустым."); return; }
+
+        const dup = state.books.some(x =>
+          x.id !== id && (x.name || "").trim().toLowerCase() === newName.toLowerCase()
+        );
+        if (dup) { alert("Такой учебник уже есть."); return; }
+
+        b.name = newName;
+        b.pdfName = newPdf;
+
+        persist();
+        refreshAll();
+
+        editingBookId = null;
+        editingBookDraft = null;
+        renderModalList();
+        return;
+      }
+    }
+  });
+
+  modalClose.addEventListener("click", closeModal);
+  modalDone.addEventListener("click", closeModal);
+  modalBackdrop.addEventListener("click", (e) => { if (e.target === modalBackdrop) closeModal(); });
+
+  btnManageStudents.addEventListener("click", () => openModal("students"));
+  btnManageBooks.addEventListener("click", () => openModal("books"));
+
+  /** ============================
+   *  Export / Import
+   *  ============================ */
+  btnExport.addEventListener("click", () => {
+    const data = JSON.stringify(state, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `diary-backup-${todayISO()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  fileImport.addEventListener("change", async () => {
+    const file = fileImport.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const imported = JSON.parse(text);
+
+      if (!imported || typeof imported !== "object") throw new Error("bad");
+      if (!Array.isArray(imported.students) || !Array.isArray(imported.books) || !Array.isArray(imported.lessons)) {
+        throw new Error("bad");
+      }
+
+      state = imported;
+      persist();
+      refreshAll();
+      alert("Импорт выполнен ✅");
+    } catch {
+      alert("Не удалось импортировать: файл некорректный.");
+    } finally {
+      fileImport.value = "";
+    }
+  });
+}
+
+/** =========================================================
+ *  BOOTSTRAP (один раз)
+ *  ========================================================= */
+document.addEventListener("DOMContentLoaded", async () => {
+  // 1) если вернулись от OAuth
+  await handleOAuthReturn();
+
+  // 2) обработчики кнопок (и в gate, и в шапке)
+  document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
+  document.getElementById("btnLoginTop")?.addEventListener("click", startYandexLogin);
+
+  document.getElementById("btnDevSkip")?.addEventListener("click", () => {
+    localStorage.setItem("auth_mode", "local");
+    location.reload(); // проще и надежнее
+  });
+
+  document.getElementById("btnLogout")?.addEventListener("click", () => {
+    if (!confirm("Выйти?")) return;
+    localStorage.removeItem("yandex_oauth_token");
+    localStorage.removeItem("yandex_user_display");
+    localStorage.removeItem("yandex_oauth_state");
+    // после выхода — пусть будет local режим (чтобы не «запиралось»)
+    localStorage.setItem("auth_mode", "local");
+    location.reload();
+  });
+
+  document.getElementById("btnSwitch")?.addEventListener("click", () => {
+    // просто заново логинимся (с prompt=login)
+    localStorage.removeItem("yandex_oauth_token");
+    localStorage.removeItem("yandex_user_display");
+    localStorage.removeItem("yandex_oauth_state");
+    startYandexLogin();
+  });
+
+  // 3) показать gate/app
+  showAppOrLogin();
+
+  // если ещё не выбрали режим и не залогинены — просто ждём (gate открыт)
+  if (!canEnterApp()) return;
+
+  // 4) загрузить данные (строго: в режиме входа — только Диск)
+  try {
+    if (isYandexLoggedIn()) {
+      setSyncOverlay(true, "Тяну данные с Яндекс.Диска…");
+      state = await loadStateFromDisk();
+      setSyncOverlay(false);
+    } else {
+      state = loadStateLocal();
+    }
+  } catch (e) {
+    console.error(e);
+    setSyncOverlay(false);
+
+    if (isYandexLoggedIn()) {
+      alert("Не удалось загрузить данные с Яндекс.Диска. Проверь интернет и попробуй снова.");
+      // возвращаем на gate
+      localStorage.removeItem("yandex_oauth_token");
+      localStorage.removeItem("yandex_user_display");
+      localStorage.removeItem("yandex_oauth_state");
+      localStorage.removeItem("auth_mode");
+      showAppOrLogin();
+      return;
+    }
+
+    state = loadStateLocal();
   }
+
+  // 5) запускаем дневник
+  bootDiary();
 });
 </script>
+
 </body>
 </html>
-}
