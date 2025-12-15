@@ -23,7 +23,7 @@
 <body class="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-fuchsia-50 text-slate-900">
 
   <!-- Auth gate (СНАРУЖИ appRoot) -->
-  <div id="authGate" class="max-w-6xl mx-auto px-4 py-8">
+  <div id="authGate" class="max-w-6xl mx-auto px-4 py-8 hidden">
     <div class="glass rounded-2xl border border-white/60 shadow-soft p-6">
       <h2 class="text-2xl font-semibold">Вход</h2>
       <p class="mt-2 text-slate-600">
@@ -49,7 +49,7 @@
   </div>
 
   <!-- App (ИЗНАЧАЛЬНО СКРЫТ) -->
-  <div id="appRoot" class="max-w-6xl mx-auto px-4 py-8 hidden">
+  <div id="appRoot" class="max-w-6xl mx-auto px-4 py-8">
 
     <!-- Header -->
     <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -311,9 +311,6 @@ function showAppOrLogin() {
   }
 
   const enter = canEnterApp();
-
-  gate?.classList.toggle("hidden", enter);
-  app?.classList.toggle("hidden", !enter);
 
   // Кнопки в шапке:
   // - В local показываем "Войти" (чтобы перейти на Яндекс)
