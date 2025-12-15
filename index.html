@@ -349,6 +349,7 @@ function startYandexLogin() {
   url.searchParams.set("prompt", "login"); // чтобы можно было выбрать другой аккаунт
 
   location.href = url.toString();
+  sessionStorage.setItem("yandex_oauth_state", st);
 }
 
 async function fetchYandexUser(token) {
@@ -1334,15 +1335,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     setSyncOverlay(false);
 
     if (isYandexLoggedIn()) {
-      alert("Не удалось загрузить данные с Яндекс.Диска.\n\n" + (e?.message || e));
-      // возвращаем на gate
-      localStorage.removeItem("yandex_oauth_token");
-      localStorage.removeItem("yandex_user_display");
-      localStorage.removeItem("yandex_oauth_state");
-      localStorage.removeItem("auth_mode");
-      showAppOrLogin();
-      return;
-    }
+  alert("Не удалось загрузить данные с Яндекс.Диска.\n\n" + (e?.message || e) + "\n\nОткрою локальную копию.");
+  // НЕ удаляем токен, просто откроем local как fallback
+  state = loadStateLocal();
+  bootDiary();
+  return;
+}
 
     state = loadStateLocal();
   }
