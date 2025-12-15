@@ -290,14 +290,10 @@ function startYandexLogin() {
   url.searchParams.set("response_type", "token");
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("redirect_uri", REDIRECT_URI);
-
-  // если Диск пока не нужен — просто закомментируй scope
   url.searchParams.set("scope", "cloud_api:disk.app_folder");
-
   url.searchParams.set("state", state);
+  url.searchParams.set("prompt", "login");
 
-  // ВАЖНО: сначала логируем, потом уходим
-  console.log("AUTH URL:", url.toString());
   location.href = url.toString();
 }
 
