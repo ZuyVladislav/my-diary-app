@@ -405,6 +405,13 @@ async function diskApi(url, { method="GET", token, headers={}, body } = {}) {
     },
     body
   });
+
+  if (!r.ok) {
+    let txt = "";
+    try { txt = await r.text(); } catch {}
+    throw new Error(`YandexDisk API ${method} ${r.status}: ${txt || r.statusText}`);
+  }
+
   return r;
 }
 
@@ -1327,7 +1334,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setSyncOverlay(false);
 
     if (isYandexLoggedIn()) {
-      alert("Не удалось загрузить данные с Яндекс.Диска. Проверь интернет и попробуй снова.");
+      alert("Не удалось загрузить данные с Яндекс.Диска.\n\n" + (e?.message || e));
       // возвращаем на gate
       localStorage.removeItem("yandex_oauth_token");
       localStorage.removeItem("yandex_user_display");
