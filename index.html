@@ -74,12 +74,12 @@
           ⬆️ Импорт
           <input id="fileImport" type="file" accept="application/json" class="hidden">
         </label>
-        <button id="btnLoginTop"
+       <button id="btnLoginTop"
   class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft hidden">
   🔑 Войти
 </button>
-        <button id="btnLogout"
-  class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
+<button id="btnLogout"
+  class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft hidden">
   🚪 Выйти
 </button>
       </div>
@@ -273,8 +273,13 @@ function startYandexLogin() {
 function isYandexLoggedIn() {
   return !!localStorage.getItem("yandex_oauth_code");
 }
+
 function isLocalMode() {
   return localStorage.getItem("auth_mode") === "local";
+}
+
+function canEnterApp() {
+  return isYandexLoggedIn() || isLocalMode();
 }
   
 function showAppOrLogin() {
@@ -282,49 +287,55 @@ function showAppOrLogin() {
   const app  = document.getElementById("appRoot");
   const dbg  = document.getElementById("authDebug");
 
+  const btnLoginTop = document.getElementById("btnLoginTop"); // кнопка "Войти" в шапке
+  const btnLogout   = document.getElementById("btnLogout");   // кнопка "Выйти" в шапке
+
   const code  = localStorage.getItem("yandex_oauth_code");
   const local = isLocalMode();
 
   if (dbg) {
-    dbg.textContent = code
-      ? ("code=" + code.slice(0, 8) + "…")
-      : (local ? "local mode" : "no code");
+    dbg.textContent = code ? ("code=" + code.slice(0, 8) + "…") : (local ? "local mode" : "no code");
   }
 
-  const canEnter = isYandexLoggedIn() || local;
+  const enter = canEnterApp();
 
-  gate?.classList.toggle("hidden", canEnter);
-  app?.classList.toggle("hidden", !canEnter);
+  gate?.classList.toggle("hidden", enter);
+  app?.classList.toggle("hidden", !enter);
+
+  // Кнопки в шапке:
+  // - В local показываем "Войти" (чтобы перейти на Яндекс)
+  // - В Яндекс-режиме показываем "Выйти"
+  btnLoginTop?.classList.toggle("hidden", !local);
+  btnLogout?.classList.toggle("hidden", !isYandexLoggedIn());
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("btnLoginYandex")
-    ?.addEventListener("click", startYandexLogin);
+  document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
 
-  document.getElementById("btnLoginTop")
-    ?.addEventListener("click", () => {
-      localStorage.removeItem("auth_mode");
-      startYandexLogin();
-    });
+  // Пропустить (локально)
+  document.getElementById("btnDevSkip")?.addEventListener("click", () => {
+    localStorage.setItem("auth_mode", "local");
+    showAppOrLogin();
+  });
 
-  document.getElementById("btnLogout")
-    ?.addEventListener("click", () => {
-      if (!confirm("Выйти из аккаунта?")) return;
+  // Войти (в шапке) — только в local режиме
+  document.getElementById("btnLoginTop")?.addEventListener("click", () => {
+    localStorage.removeItem("auth_mode"); // чтобы не оставаться в local
+    startYandexLogin();
+  });
 
-      localStorage.removeItem("yandex_oauth_code");
-      localStorage.removeItem("yandex_oauth_state");
-      showAppOrLogin();
-    });
+  // Выйти (в шапке) — только для Яндекс-режима, но на всякий случай чистим всё
+  document.getElementById("btnLogout")?.addEventListener("click", () => {
+    if (!confirm("Выйти?")) return;
 
-  document.getElementById("btnDevSkip")
-    ?.addEventListener("click", () => {
-      localStorage.setItem("auth_mode", "local");
-      showAppOrLogin();
-    });
+    localStorage.removeItem("yandex_oauth_code");
+    localStorage.removeItem("yandex_oauth_state");
+    localStorage.removeItem("auth_mode"); // <- вот это и фиксит “не работает”
+    showAppOrLogin();
+  });
 
   showAppOrLogin();
 });
-
 
 function todayISO() {
   const d = new Date();
