@@ -74,6 +74,10 @@
           ⬆️ Импорт
           <input id="fileImport" type="file" accept="application/json" class="hidden">
         </label>
+        <button id="btnLoginTop"
+  class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft hidden">
+  🔑 Войти
+</button>
         <button id="btnLogout"
   class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
   🚪 Выйти
@@ -266,45 +270,61 @@ function startYandexLogin() {
   location.href = url.toString();
 }
 
-function isLoggedIn() {
+function isYandexLoggedIn() {
   return !!localStorage.getItem("yandex_oauth_code");
 }
-
+function isLocalMode() {
+  return localStorage.getItem("auth_mode") === "local";
+}
+  
 function showAppOrLogin() {
   const gate = document.getElementById("authGate");
-  const app = document.getElementById("appRoot");
-  const dbg = document.getElementById("authDebug");
+  const app  = document.getElementById("appRoot");
+  const dbg  = document.getElementById("authDebug");
 
-  const code = localStorage.getItem("yandex_oauth_code");
-  if (dbg) dbg.textContent = code ? ("code=" + code.slice(0, 8) + "…") : "no code";
+  const code  = localStorage.getItem("yandex_oauth_code");
+  const local = isLocalMode();
 
-  if (isLoggedIn()) {
-    gate?.classList.add("hidden");
-    app?.classList.remove("hidden");
-  } else {
-    gate?.classList.remove("hidden");
-    app?.classList.add("hidden");
+  if (dbg) {
+    dbg.textContent = code
+      ? ("code=" + code.slice(0, 8) + "…")
+      : (local ? "local mode" : "no code");
   }
+
+  const canEnter = isYandexLoggedIn() || local;
+
+  gate?.classList.toggle("hidden", canEnter);
+  app?.classList.toggle("hidden", !canEnter);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
+  document.getElementById("btnLoginYandex")
+    ?.addEventListener("click", startYandexLogin);
 
-  document.getElementById("btnLogout")?.addEventListener("click", () => {
-    if (!confirm("Выйти из аккаунта?")) return;
+  document.getElementById("btnLoginTop")
+    ?.addEventListener("click", () => {
+      localStorage.removeItem("auth_mode");
+      startYandexLogin();
+    });
 
-    localStorage.removeItem("yandex_oauth_code");
-    localStorage.removeItem("yandex_oauth_state");
-    showAppOrLogin();
-  });
+  document.getElementById("btnLogout")
+    ?.addEventListener("click", () => {
+      if (!confirm("Выйти из аккаунта?")) return;
 
-  document.getElementById("btnDevSkip")?.addEventListener("click", () => {
-    localStorage.setItem("yandex_oauth_code", "DEV_LOCAL");
-    showAppOrLogin();
-  });
+      localStorage.removeItem("yandex_oauth_code");
+      localStorage.removeItem("yandex_oauth_state");
+      showAppOrLogin();
+    });
+
+  document.getElementById("btnDevSkip")
+    ?.addEventListener("click", () => {
+      localStorage.setItem("auth_mode", "local");
+      showAppOrLogin();
+    });
 
   showAppOrLogin();
 });
+
 
 function todayISO() {
   const d = new Date();
