@@ -328,6 +328,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // ✅ если вернулись с Яндекса — сохранить code и почистить URL
   handleOAuthReturn();
 
+    // ✅ локальный режим по умолчанию (если ещё не выбирали и Яндекс не залогинен)
+  if (!localStorage.getItem("auth_mode") && !localStorage.getItem("yandex_oauth_code")) {
+    localStorage.setItem("auth_mode", "local");
+  }
+
   // Пропустить (локально)
   document.getElementById("btnDevSkip")?.addEventListener("click", () => {
     localStorage.setItem("auth_mode", "local");
