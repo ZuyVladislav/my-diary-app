@@ -311,6 +311,9 @@ function showAppOrLogin() {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
+  document.getElementById("btnLogout")?.addEventListener("click", () => {
+  console.log("LOGOUT CLICK");
+});
 
   // Пропустить (локально)
   document.getElementById("btnDevSkip")?.addEventListener("click", () => {
