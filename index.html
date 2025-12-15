@@ -8,10 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* чтобы hidden работал даже если Tailwind не загрузился */
     .hidden { display: none !important; }
-
-    /* твои кастомные классы */
     .glass { backdrop-filter: blur(10px); background: rgba(255,255,255,.72); }
     .shadow-soft { box-shadow: 0 10px 30px rgba(0,0,0,.10); }
     .focus-ring:focus { outline: none; box-shadow: 0 0 0 4px rgba(99,102,241,.25); border-color: rgba(99,102,241,.85); }
@@ -49,7 +46,7 @@
   </div>
 
   <!-- App (ИЗНАЧАЛЬНО СКРЫТ) -->
-  <div id="appRoot" class="max-w-6xl mx-auto px-4 py-8">
+  <div id="appRoot" class="max-w-6xl mx-auto px-4 py-8 hidden">
 
     <!-- Header -->
     <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -74,17 +71,23 @@
           ⬆️ Импорт
           <input id="fileImport" type="file" accept="application/json" class="hidden">
         </label>
-       <div id="whoami"
-       class="px-3 py-2 text-sm text-slate-700 hidden whitespace-nowrap">
-  </div>
+
+        <div id="whoami" class="px-3 py-2 text-sm text-slate-700 hidden whitespace-nowrap"></div>
+
         <button id="btnLoginTop"
-  class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft hidden">
-  🔑 Войти
-</button>   
-<button id="btnLogout"
-  class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft hidden">
-  🚪 Выйти
-</button>
+          class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft hidden">
+          🔑 Войти
+        </button>
+
+        <button id="btnLogout"
+          class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft hidden">
+          🚪 Выйти
+        </button>
+
+        <button id="btnSwitch"
+          class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft hidden">
+          🔄 Сменить аккаунт
+        </button>
       </div>
     </div>
 
@@ -245,34 +248,66 @@
   </div>
 
 <script>
-
-  /** ============================
+/** ============================
  *  Storage + Utils
  *  ============================ */
 const STORAGE_KEY = "lesson_diary_v2";
 
-// ===== Yandex OAuth (implicit token, без сервера) =====
+function todayISO() {
+  const d = new Date();
+  const tzOff = d.getTimezoneOffset() * 60000;
+  return new Date(d - tzOff).toISOString().slice(0, 10);
+}
+function uid() { return Math.random().toString(16).slice(2) + Date.now().toString(16); }
+
+function escapeHtml(str=""){
+  return String(str)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;");
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    return {
+      students: [{ id: uid(), name: "Иван Иванов" }],
+      books: [{ id: uid(), name: "Учебник 1", pdfName: "" }],
+      lessons: []
+    };
+  }
+  try { return JSON.parse(raw); }
+  catch { return { students: [], books: [], lessons: [] }; }
+}
+let state = loadState();
+function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+/** ============================
+ *  Yandex OAuth (implicit token, без сервера)
+ *  ============================ */
 const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
 const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/";
 
-// 1) helpers
+// ключи
+const LS_TOKEN = "yandex_oauth_token";
+const LS_USER  = "yandex_user_display";
+const LS_STATE = "yandex_oauth_state";
+const LS_MODE  = "auth_mode"; // "local" | (пусто)
+
 function randomState() {
   return crypto.getRandomValues(new Uint32Array(4)).join("-");
 }
-
 function isYandexLoggedIn() {
-  return !!localStorage.getItem("yandex_oauth_token");
+  return !!localStorage.getItem(LS_TOKEN);
 }
-
 function isLocalMode() {
-  return localStorage.getItem("auth_mode") === "local";
+  return localStorage.getItem(LS_MODE) === "local";
 }
-
 function canEnterApp() {
   return isYandexLoggedIn() || isLocalMode();
 }
 
-// 2) API: получить имя пользователя
 async function fetchYandexUser(token) {
   const r = await fetch("https://login.yandex.ru/info?format=json", {
     headers: { Authorization: `OAuth ${token}` }
@@ -281,63 +316,72 @@ async function fetchYandexUser(token) {
   return r.json();
 }
 
-// 3) start login
-function startYandexLogin() {
+function buildAuthorizeUrl() {
   const state = randomState();
-  localStorage.setItem("yandex_oauth_state", state);
+  localStorage.setItem(LS_STATE, state);
 
   const url = new URL("https://oauth.yandex.ru/authorize");
   url.searchParams.set("response_type", "token");
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("redirect_uri", REDIRECT_URI);
-  url.searchParams.set("scope", "cloud_api:disk.app_folder");
-  url.searchParams.set("state", state);
-  url.searchParams.set("prompt", "login");
 
-  location.href = url.toString();
+  // твой scope (как было)
+  url.searchParams.set("scope", "cloud_api:disk.app_folder");
+
+  // state для защиты
+  url.searchParams.set("state", state);
+
+  // заставить страницу подтверждения открыться заново (полезно для смены аккаунта)
+  url.searchParams.set("force_confirm", "yes"); // пример использования параметра есть в authorize-URL :contentReference[oaicite:1]{index=1}
+
+  return url.toString();
 }
 
-// 4) handle return from Yandex (#access_token=...)
+function startYandexLogin() {
+  // важно: не трогаем дневник/учеников/учебники — только auth
+  location.href = buildAuthorizeUrl();
+}
+
+function clearAuth() {
+  localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_USER);
+  localStorage.removeItem(LS_STATE);
+}
+
 async function handleOAuthReturn() {
   const hash = new URLSearchParams(location.hash.slice(1));
   const token = hash.get("access_token");
   const state = hash.get("state");
-  const savedState = localStorage.getItem("yandex_oauth_state");
+  const savedState = localStorage.getItem(LS_STATE);
 
   if (!token) return;
 
   // если state не совпал — не логиним
   if (!state || !savedState || state !== savedState) {
-    // подчистим мусор из адреса
     history.replaceState({}, "", location.pathname);
     return;
   }
 
-  // сохраняем токен и выходим из local mode
-  localStorage.setItem("yandex_oauth_token", token);
-  localStorage.removeItem("yandex_oauth_state");
-  localStorage.removeItem("auth_mode");
+  // сохранили токен, вышли из local режима
+  localStorage.setItem(LS_TOKEN, token);
+  localStorage.removeItem(LS_STATE);
+  localStorage.removeItem(LS_MODE);
 
-  // убрать #access_token=... из адреса
+  // убрать #access_token=...
   history.replaceState({}, "", location.pathname);
 
-  // получить имя и сохранить
+  // подтянуть имя
   try {
     const me = await fetchYandexUser(token);
     localStorage.setItem(
-      "yandex_user_display",
+      LS_USER,
       me.display_name || me.real_name || me.login || "Пользователь"
     );
   } catch {
-    // если профиль не получили — просто покажем "Вы вошли"
-    localStorage.setItem("yandex_user_display", "");
+    localStorage.setItem(LS_USER, "");
   }
-
-  // обновить UI
-  showAppOrLogin();
 }
 
-// 5) UI
 function showAppOrLogin() {
   const gate = document.getElementById("authGate");
   const app  = document.getElementById("appRoot");
@@ -348,75 +392,81 @@ function showAppOrLogin() {
 
   const btnLoginTop = document.getElementById("btnLoginTop");
   const btnLogout   = document.getElementById("btnLogout");
+  const btnSwitch   = document.getElementById("btnSwitch");
   const who         = document.getElementById("whoami");
 
   const logged = isYandexLoggedIn();
   const local  = isLocalMode();
   const enter  = canEnterApp();
 
-  // показать/скрыть gate и app
+  // gate/app
   gate?.classList.toggle("hidden", enter);
   app?.classList.toggle("hidden", !enter);
 
-  // кнопки в шапке
+  // кнопки шапки
   btnLoginTop?.classList.toggle("hidden", logged);
   btnLogout?.classList.toggle("hidden", !logged);
+
+  // СМЕНИТЬ АККАУНТ — показываем ТОЛЬКО когда залогинен
+  btnSwitch?.classList.toggle("hidden", !logged);
 
   // whoami
   if (who) {
     who.classList.toggle("hidden", !logged);
-    const name = localStorage.getItem("yandex_user_display") || "";
+    const name = localStorage.getItem(LS_USER) || "";
     who.textContent = name ? `Вы вошли как ${name}` : "Вы вошли";
   }
 
   // debug в gate
   if (dbg) {
-    const token = localStorage.getItem("yandex_oauth_token");
+    const token = localStorage.getItem(LS_TOKEN);
     dbg.textContent = logged
       ? ("token=" + token.slice(0, 8) + "…")
       : (local ? "local mode" : "not logged");
   }
 
-  // (опционально) если в gate-кнопки нужны только когда gate показан — оно и так норм
+  // кнопки в gate
   btnLoginYandex?.classList.toggle("hidden", logged);
   btnDevSkip?.classList.toggle("hidden", logged);
 }
 
-// 6) events
-document.addEventListener("DOMContentLoaded", () => {
-  // обработать возврат с Яндекса
-  handleOAuthReturn();
+document.addEventListener("DOMContentLoaded", async () => {
+  // 1) если вернулись с OAuth — сохранили токен
+  await handleOAuthReturn();
 
-  // если нет ни токена, ни выбранного режима — ставим local по умолчанию
-  if (!localStorage.getItem("auth_mode") && !isYandexLoggedIn()) {
-    localStorage.setItem("auth_mode", "local");
+  // 2) если нет режима и нет токена — включаем local по умолчанию
+  if (!localStorage.getItem(LS_MODE) && !isYandexLoggedIn()) {
+    localStorage.setItem(LS_MODE, "local");
   }
 
-  // кнопка в gate: Войти через Яндекс
+  // 3) события
   document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
 
-  // пропустить (локально)
   document.getElementById("btnDevSkip")?.addEventListener("click", () => {
-    localStorage.setItem("auth_mode", "local");
+    localStorage.setItem(LS_MODE, "local");
     showAppOrLogin();
   });
 
-  // кнопка в шапке: Войти
-  document.getElementById("btnLoginTop")?.addEventListener("click", () => {
-    startYandexLogin();
-  });
+  document.getElementById("btnLoginTop")?.addEventListener("click", startYandexLogin);
 
-  // кнопка в шапке: Выйти
   document.getElementById("btnLogout")?.addEventListener("click", () => {
     if (!confirm("Выйти?")) return;
 
-    localStorage.removeItem("yandex_oauth_token");
-    localStorage.removeItem("yandex_user_display");
+    clearAuth();
 
-    // после выхода возвращаем local-режим, чтобы сайт не “запирался”
-    localStorage.setItem("auth_mode", "local");
+    // после выхода возвращаем local, чтобы не “запирался” сайт
+    localStorage.setItem(LS_MODE, "local");
 
     showAppOrLogin();
+  });
+
+  document.getElementById("btnSwitch")?.addEventListener("click", () => {
+    // Смена аккаунта = сброс токена и новая авторизация.
+    // Яндекс-сессию в браузере мы не можем убить, но на странице OAuth можно выбрать другой логин.
+    if (!confirm("Сменить аккаунт? Откроется страница авторизации Яндекса.")) return;
+
+    clearAuth();
+    startYandexLogin();
   });
 
   showAppOrLogin();
@@ -711,7 +761,6 @@ lessonsTbody.addEventListener("input", (e) => {
 filterStudent.addEventListener("change", renderLessons);
 filterDate.addEventListener("change", renderLessons);
 filterQuery.addEventListener("input", renderLessons);
-
 btnClearDate.addEventListener("click", () => { filterDate.value = ""; renderLessons(); });
 
 btnClearAll.addEventListener("click", () => {
@@ -849,7 +898,7 @@ function renderModalList() {
     return;
   }
 
-  // ===== BOOKS (stable layout) =====
+  // ===== BOOKS =====
   if (state.books.length === 0) {
     modalList.innerHTML = `<div class="text-sm text-slate-600">Пока пусто. Добавь первый учебник выше.</div>`;
     return;
@@ -868,7 +917,6 @@ function renderModalList() {
 
     row.innerHTML = `
       <div class="flex items-center gap-3">
-        <!-- Название: чуть уже, чтобы справа всегда был “пульт” -->
         <div class="flex-[0.95] min-w-0">
           <div class="text-xs font-medium text-slate-600 mb-1">Учебник</div>
           ${
@@ -889,7 +937,6 @@ function renderModalList() {
           </div>
         </div>
 
-        <!-- Пульт справа фиксированный => не “плывет” -->
         <div class="shrink-0 w-[264px] flex items-center justify-end gap-2">
           <label class="h-11 w-11 inline-flex items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-50 shadow-soft cursor-pointer"
                  title="Выбрать PDF">
@@ -990,7 +1037,7 @@ modalList.addEventListener("input", (e) => {
   }
 });
 
-// pick PDF per book (works from view too)
+// pick PDF per book
 modalList.addEventListener("change", (e) => {
   const pickId = e.target.getAttribute("data-book-pick");
   if (!pickId) return;
@@ -1171,5 +1218,4 @@ fileImport.addEventListener("change", async () => {
 });
 </script>
 </body>
-  </html>
 </html>
