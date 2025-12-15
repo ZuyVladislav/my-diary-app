@@ -338,6 +338,7 @@ function randomState() {
 function startYandexLogin() {
   const st = randomState();
   localStorage.setItem("yandex_oauth_state", st);
+  sessionStorage.setItem("yandex_oauth_state", st);
 
   const url = new URL("https://oauth.yandex.ru/authorize");
   url.searchParams.set("response_type", "token");
@@ -362,18 +363,23 @@ async function handleOAuthReturn() {
   const hash = new URLSearchParams(location.hash.slice(1));
   const token = hash.get("access_token");
   const state = hash.get("state");
-  const savedState = localStorage.getItem("yandex_oauth_state");
 
   if (!token) return;
 
   // чистим URL сразу
   history.replaceState({}, "", location.pathname);
 
-  // если state не совпал — не логиним
-  if (!state || !savedState || state !== savedState) return;
+  const savedState =
+    localStorage.getItem("yandex_oauth_state") ||
+    sessionStorage.getItem("yandex_oauth_state");
+
+  // если savedState есть и не совпал — не логиним
+  // если savedState пропал (часто на других устройствах) — логиним всё равно
+  if (savedState && state && state !== savedState) return;
 
   localStorage.setItem("yandex_oauth_token", token);
   localStorage.removeItem("yandex_oauth_state");
+  sessionStorage.removeItem("yandex_oauth_state");
   localStorage.removeItem("auth_mode");
 
   try {
