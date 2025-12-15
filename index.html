@@ -74,10 +74,13 @@
           ⬆️ Импорт
           <input id="fileImport" type="file" accept="application/json" class="hidden">
         </label>
-       <button id="btnLoginTop"
+       <div id="whoami"
+       class="px-3 py-2 text-sm text-slate-700 hidden whitespace-nowrap">
+  </div>
+        <button id="btnLoginTop"
   class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft hidden">
   🔑 Войти
-</button>
+</button>   
 <button id="btnLogout"
   class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft hidden">
   🚪 Выйти
@@ -259,9 +262,17 @@ function startYandexLogin() {
   localStorage.setItem("yandex_oauth_state", state);
 
   const url = new URL("https://oauth.yandex.ru/authorize");
-  url.searchParams.set("response_type", "code");
+  url.searchParams.set("response_type", "token");
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("redirect_uri", REDIRECT_URI);
+
+  async function fetchYandexUser(token) {
+  const r = await fetch("https://login.yandex.ru/info?format=json", {
+    headers: { Authorization: `OAuth ${token}` }
+  });
+  if (!r.ok) throw new Error("profile fetch failed");
+  return r.json();
+}
   // Если пока без Диска — можно scope вообще убрать.
   // Но раз ты уже сделал: пусть будет app_folder
   url.searchParams.set("scope", "cloud_api:disk.app_folder");
@@ -272,21 +283,33 @@ function startYandexLogin() {
   console.log("AUTH URL:", url.toString());
 }
 
-function handleOAuthReturn() {
-  const params = new URLSearchParams(location.search);
-  const code = params.get("code");
-  const state = params.get("state");
+async function handleOAuthReturn() {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const token = hash.get("access_token");
+  const state = hash.get("state");
   const savedState = localStorage.getItem("yandex_oauth_state");
 
-  if (code && state && savedState && state === savedState) {
-    localStorage.setItem("yandex_oauth_code", code);
+  if (token && state && savedState && state === savedState) {
+    localStorage.setItem("yandex_oauth_token", token);
     localStorage.removeItem("yandex_oauth_state");
-    history.replaceState({}, "", location.pathname); // убрать ?code=... из адреса
+
+    // убрать #access_token=... из адреса
+    history.replaceState({}, "", location.pathname);
+
+    try {
+      const me = await fetchYandexUser(token);
+      localStorage.setItem(
+        "yandex_user_display",
+        me.display_name || me.real_name || me.login || ""
+      );
+    } catch (e) {
+      // можно молча
+    }
   }
 }
 
 function isYandexLoggedIn() {
-  return !!localStorage.getItem("yandex_oauth_code");
+  return !!localStorage.getItem("yandex_oauth_token");
 }
 
 function isLocalMode() {
@@ -302,23 +325,39 @@ function showAppOrLogin() {
   const app  = document.getElementById("appRoot");
   const dbg  = document.getElementById("authDebug");
 
-  const btnLoginTop = document.getElementById("btnLoginTop"); // кнопка "Войти" в шапке
-  const btnLogout   = document.getElementById("btnLogout");   // кнопка "Выйти" в шапке
+  const btnLoginTop = document.getElementById("btnLoginTop");
+  const btnLogout   = document.getElementById("btnLogout");
+  const who         = document.getElementById("whoami");
 
   const code  = localStorage.getItem("yandex_oauth_code");
   const local = isLocalMode();
+  const logged = !!code;
 
+  // debug
   if (dbg) {
-    dbg.textContent = code ? ("code=" + code.slice(0, 8) + "…") : (local ? "local mode" : "no code");
+    dbg.textContent = logged
+      ? ("code=" + code.slice(0, 8) + "…")
+      : (local ? "local mode" : "not logged");
   }
 
+  // показать / скрыть приложение и гейт
   const enter = canEnterApp();
+  gate?.classList.toggle("hidden", enter);
+  app?.classList.toggle("hidden", !enter);
 
-  // Кнопки в шапке:
-  // - В local показываем "Войти" (чтобы перейти на Яндекс)
-  // - В Яндекс-режиме показываем "Выйти"
-  btnLoginTop?.classList.toggle("hidden", !local);
-  btnLogout?.classList.toggle("hidden", !isYandexLoggedIn());
+  // кнопки
+  btnLoginTop?.classList.toggle("hidden", logged);
+  btnLogout?.classList.toggle("hidden", !logged);
+
+  // ===== whoami =====
+  if (who) {
+    who.classList.toggle("hidden", !logged);
+
+    const name = localStorage.getItem("yandex_user_display") || "";
+    who.textContent = name
+      ? `Вы вошли как ${name}`
+      : "Вы вошли";
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -346,13 +385,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Выйти
   document.getElementById("btnLogout")?.addEventListener("click", () => {
-    if (!confirm("Выйти?")) return;
+  if (!confirm("Выйти?")) return;
 
-    localStorage.removeItem("yandex_oauth_code");
-    localStorage.removeItem("yandex_oauth_state");
-    localStorage.removeItem("auth_mode");
-    showAppOrLogin();
-  });
+  localStorage.removeItem("yandex_oauth_token");
+  localStorage.removeItem("yandex_user_display");
+  localStorage.removeItem("yandex_oauth_state");
+
+  showAppOrLogin();
+});
 
   showAppOrLogin();
 });
