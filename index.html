@@ -8,9 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* чтобы hidden работал даже если Tailwind не загрузился */
     .hidden { display: none !important; }
-
     .glass { backdrop-filter: blur(10px); background: rgba(255,255,255,.72); }
     .shadow-soft { box-shadow: 0 10px 30px rgba(0,0,0,.10); }
     .focus-ring:focus { outline: none; box-shadow: 0 0 0 4px rgba(99,102,241,.25); border-color: rgba(99,102,241,.85); }
@@ -21,8 +19,34 @@
 
 <body class="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-fuchsia-50 text-slate-900">
 
+  <!-- Auth gate -->
+  <div id="authGate" class="max-w-6xl mx-auto px-4 py-8 hidden">
+    <div class="glass rounded-2xl border border-white/60 shadow-soft p-6">
+      <h2 class="text-2xl font-semibold">Вход</h2>
+      <p class="mt-2 text-slate-600">
+        Чтобы открыть дневник, войди через Яндекс (данные всё равно хранятся в этом браузере).
+      </p>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button id="btnLoginYandex"
+          class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft">
+          Войти через Яндекс
+        </button>
+
+        <button id="btnDevSkip"
+          class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
+          Пропустить (локально)
+        </button>
+      </div>
+
+      <div class="mt-3 text-xs text-slate-500">
+        Debug: <span id="authDebug" class="mono"></span>
+      </div>
+    </div>
+  </div>
+
   <!-- App -->
-  <div id="appRoot" class="max-w-6xl mx-auto px-4 py-8">
+  <div id="appRoot" class="max-w-6xl mx-auto px-4 py-8 hidden">
 
     <!-- Header -->
     <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -30,22 +54,19 @@
         <h1 class="text-3xl md:text-4xl font-bold tracking-tight">Электронный дневник занятий</h1>
       </div>
 
-      <div class="flex flex-wrap gap-2 items-center">
+      <div class="flex flex-wrap gap-2">
         <button id="btnManageStudents"
           class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
           👤 Ученики
         </button>
-
         <button id="btnManageBooks"
           class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
           📘 Учебники (PDF)
         </button>
-
         <button id="btnExport"
           class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft">
           ⬇️ Экспорт
         </button>
-
         <label class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft cursor-pointer">
           ⬆️ Импорт
           <input id="fileImport" type="file" accept="application/json" class="hidden">
@@ -54,7 +75,7 @@
         <div id="whoami" class="px-3 py-2 text-sm text-slate-700 hidden whitespace-nowrap"></div>
 
         <button id="btnLoginTop"
-          class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft">
+          class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft hidden">
           🔑 Войти
         </button>
 
@@ -227,8 +248,10 @@
   </div>
 
 <script>
+"use strict";
+
 /** ============================
- *  Storage + Utils (LOCAL ONLY)
+ *  Storage + Utils
  *  ============================ */
 const STORAGE_KEY = "lesson_diary_v2";
 
@@ -266,16 +289,15 @@ function loadState() {
     return defaultState();
   }
 }
-let state = loadState();
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 /** ============================
- *  Yandex Auth (NO DISK)
+ *  Yandex OAuth (ТОЛЬКО ВХОД, БЕЗ ДИСКА)
  *  ============================ */
 const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
-const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/"; // !!! должен совпадать с oauth.yandex.ru
+const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/"; // важно: должен совпадать 1-в-1
 
 function randomState() {
   return crypto.getRandomValues(new Uint32Array(4)).join("-");
@@ -286,8 +308,13 @@ function getToken() {
 function isYandexLoggedIn() {
   return !!getToken();
 }
+function isLocalMode() {
+  return localStorage.getItem("auth_mode") === "local";
+}
+function canEnterApp() {
+  return isYandexLoggedIn() || isLocalMode();
+}
 
-// user info endpoint: https://login.yandex.ru/info?format=json :contentReference[oaicite:1]{index=1}
 async function fetchYandexUser(token) {
   const r = await fetch("https://login.yandex.ru/info?format=json", {
     headers: { Authorization: `OAuth ${token}` }
@@ -296,7 +323,7 @@ async function fetchYandexUser(token) {
   return r.json();
 }
 
-function startYandexLogin() {
+function startYandexLogin({ forceConfirm = true } = {}) {
   const st = randomState();
   localStorage.setItem("yandex_oauth_state", st);
 
@@ -306,31 +333,30 @@ function startYandexLogin() {
   url.searchParams.set("redirect_uri", REDIRECT_URI);
   url.searchParams.set("state", st);
 
-  // ВАЖНО: мы НЕ просим scope вообще -> нет invalid_scope
-  // и можно выбрать другой аккаунт
-  url.searchParams.set("prompt", "login");
+  // ключевое: заставить показать подтверждение/выбор аккаунта
+  if (forceConfirm) url.searchParams.set("force_confirm", "yes");
 
+  // scope УБРАН специально, чтобы не ловить invalid_scope
   location.href = url.toString();
 }
 
 async function handleOAuthReturn() {
-  if (!location.hash || location.hash.length < 2) return;
-
   const hash = new URLSearchParams(location.hash.slice(1));
   const token = hash.get("access_token");
-  const st = hash.get("state");
-  const saved = localStorage.getItem("yandex_oauth_state");
-
-  // чистим URL сразу, чтобы не светить токен
-  history.replaceState({}, "", location.pathname);
+  const stateFromUrl = hash.get("state");
+  const savedState = localStorage.getItem("yandex_oauth_state");
 
   if (!token) return;
 
-  // state check
-  if (!st || !saved || st !== saved) return;
+  // очистить адрес от #access_token=...
+  history.replaceState({}, "", location.pathname);
+
+  // CSRF check
+  if (!stateFromUrl || !savedState || stateFromUrl !== savedState) return;
 
   localStorage.setItem("yandex_oauth_token", token);
   localStorage.removeItem("yandex_oauth_state");
+  localStorage.removeItem("auth_mode");
 
   try {
     const me = await fetchYandexUser(token);
@@ -343,13 +369,25 @@ async function handleOAuthReturn() {
   }
 }
 
-function updateAuthUI() {
+function showAppOrLogin() {
+  const gate = document.getElementById("authGate");
+  const app  = document.getElementById("appRoot");
+  const dbg  = document.getElementById("authDebug");
+
+  const btnLoginYandex = document.getElementById("btnLoginYandex");
+  const btnDevSkip     = document.getElementById("btnDevSkip");
+
   const btnLoginTop = document.getElementById("btnLoginTop");
   const btnLogout   = document.getElementById("btnLogout");
   const btnSwitch   = document.getElementById("btnSwitch");
   const who         = document.getElementById("whoami");
 
   const logged = isYandexLoggedIn();
+  const local  = isLocalMode();
+  const enter  = canEnterApp();
+
+  gate?.classList.toggle("hidden", enter);
+  app?.classList.toggle("hidden", !enter);
 
   btnLoginTop?.classList.toggle("hidden", logged);
   btnLogout?.classList.toggle("hidden", !logged);
@@ -358,14 +396,27 @@ function updateAuthUI() {
   if (who) {
     who.classList.toggle("hidden", !logged);
     const name = localStorage.getItem("yandex_user_display") || "";
-    who.textContent = name ? `Вы вошли как ${name}` : "Вы вошли";
+    who.textContent = name ? `Вы вошли как ${name}` : (logged ? "Вы вошли" : "");
   }
+
+  if (dbg) {
+    dbg.textContent = logged ? "yandex mode" : (local ? "local mode" : "not logged");
+  }
+
+  btnLoginYandex?.classList.toggle("hidden", logged);
+  btnDevSkip?.classList.toggle("hidden", logged);
 }
 
 /** ============================
- *  Diary App
+ *  State (всегда localStorage)
+ *  ============================ */
+let state = loadState();
+
+/** ============================
+ *  Diary app
  *  ============================ */
 function bootDiary() {
+  /** Elements */
   const studentSelect = document.getElementById("studentSelect");
   const bookSelect = document.getElementById("bookSelect");
   const dateInput = document.getElementById("dateInput");
@@ -388,6 +439,7 @@ function bootDiary() {
   const btnExport = document.getElementById("btnExport");
   const fileImport = document.getElementById("fileImport");
 
+  /** Render helpers */
   function renderSelect(selectEl, items, placeholderText="— выбери —") {
     selectEl.innerHTML = "";
     if (items.length === 0) {
@@ -429,7 +481,6 @@ function bootDiary() {
 
   function studentName(id){ return (state.students.find(s=>s.id===id)||{}).name || "—"; }
   function bookById(id){ return state.books.find(b=>b.id===id) || {name:"—", pdfName:""}; }
-
   function bookHref(book) {
     if (!book.pdfName) return "";
     return "./" + encodeURIComponent(book.pdfName);
@@ -449,6 +500,7 @@ function bootDiary() {
     return true;
   }
 
+  /** Inline editing for lessons */
   let editingLessonId = null;
   let editingDraft = null;
 
@@ -558,6 +610,7 @@ function bootDiary() {
     }
   }
 
+  /** Init */
   dateInput.value = todayISO();
 
   function refreshAll() {
@@ -573,6 +626,7 @@ function bootDiary() {
   }
   refreshAll();
 
+  /** Add lesson */
   lessonForm.addEventListener("submit", (e) => {
     e.preventDefault();
     if (state.students.length === 0 || state.books.length === 0) {
@@ -595,6 +649,7 @@ function bootDiary() {
     renderLessons();
   });
 
+  /** Lesson actions */
   lessonsTbody.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
@@ -631,10 +686,10 @@ function bootDiary() {
     if (key === "stop") editingDraft.stop = el.value;
   });
 
+  /** Filters */
   filterStudent.addEventListener("change", renderLessons);
   filterDate.addEventListener("change", renderLessons);
   filterQuery.addEventListener("input", renderLessons);
-
   btnClearDate.addEventListener("click", () => { filterDate.value = ""; renderLessons(); });
 
   btnClearAll.addEventListener("click", () => {
@@ -645,9 +700,7 @@ function bootDiary() {
     cancelEditLesson();
   });
 
-  /** ============================
-   *  Modal management
-   *  ============================ */
+  /** Modal management */
   const modalBackdrop = document.getElementById("modalBackdrop");
   const modalTitle = document.getElementById("modalTitle");
   const modalSubtitle = document.getElementById("modalSubtitle");
@@ -665,10 +718,10 @@ function bootDiary() {
   let newBookPdfName = "";
 
   let editingStudentId = null;
-  let editingStudentDraft = null; // { name }
+  let editingStudentDraft = null;
 
   let editingBookId = null;
-  let editingBookDraft = null; // { name, pdfName }
+  let editingBookDraft = null;
 
   function bookHrefByPdfName(pdfName) {
     if (!pdfName) return "";
@@ -770,6 +823,7 @@ function bootDiary() {
       return;
     }
 
+    // BOOKS
     if (state.books.length === 0) {
       modalList.innerHTML = `<div class="text-sm text-slate-600">Пока пусто. Добавь первый учебник выше.</div>`;
       return;
@@ -1038,9 +1092,7 @@ function bootDiary() {
   btnManageStudents.addEventListener("click", () => openModal("students"));
   btnManageBooks.addEventListener("click", () => openModal("books"));
 
-  /** ============================
-   *  Export / Import
-   *  ============================ */
+  /** Export / Import */
   btnExport.addEventListener("click", () => {
     const data = JSON.stringify(state, null, 2);
     const blob = new Blob([data], { type: "application/json" });
@@ -1086,27 +1138,36 @@ function bootDiary() {
 document.addEventListener("DOMContentLoaded", async () => {
   await handleOAuthReturn();
 
-  // auth buttons
-  document.getElementById("btnLoginTop")?.addEventListener("click", startYandexLogin);
+  // кнопки логина
+  document.getElementById("btnLoginYandex")?.addEventListener("click", () => startYandexLogin({ forceConfirm: true }));
+  document.getElementById("btnLoginTop")?.addEventListener("click", () => startYandexLogin({ forceConfirm: true }));
 
+  // пропустить (локально)
+  document.getElementById("btnDevSkip")?.addEventListener("click", () => {
+    localStorage.setItem("auth_mode", "local");
+    showAppOrLogin();
+  });
+
+  // выйти (токен удаляем, остаёмся в local режиме)
   document.getElementById("btnLogout")?.addEventListener("click", () => {
     if (!confirm("Выйти?")) return;
     localStorage.removeItem("yandex_oauth_token");
     localStorage.removeItem("yandex_user_display");
     localStorage.removeItem("yandex_oauth_state");
-    updateAuthUI();
+    localStorage.setItem("auth_mode", "local");
+    showAppOrLogin();
   });
 
+  // сменить аккаунт (форс подтверждение/выбор)
   document.getElementById("btnSwitch")?.addEventListener("click", () => {
     localStorage.removeItem("yandex_oauth_token");
     localStorage.removeItem("yandex_user_display");
-    startYandexLogin();
+    startYandexLogin({ forceConfirm: true });
   });
 
-  updateAuthUI();
+  showAppOrLogin();
   bootDiary();
 });
 </script>
-
 </body>
 </html>
