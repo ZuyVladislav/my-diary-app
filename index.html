@@ -248,7 +248,7 @@
 const STORAGE_KEY = "lesson_diary_v2";
 // ===== Yandex OAuth (phase 1: only "code exists") =====
 const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
-const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/callback.html";
+const REDIRECT_URI = location.origin + location.pathname; // вернуться в этот же diary.html
 
 function randomState() {
   return crypto.getRandomValues(new Uint32Array(4)).join("-");
@@ -268,6 +268,19 @@ function startYandexLogin() {
   url.searchParams.set("state", state);
 
   location.href = url.toString();
+}
+
+function handleOAuthReturn() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code");
+  const state = params.get("state");
+  const savedState = localStorage.getItem("yandex_oauth_state");
+
+  if (code && state && savedState && state === savedState) {
+    localStorage.setItem("yandex_oauth_code", code);
+    localStorage.removeItem("yandex_oauth_state");
+    history.replaceState({}, "", location.pathname); // убрать ?code=... из адреса
+  }
 }
 
 function isYandexLoggedIn() {
@@ -311,9 +324,9 @@ function showAppOrLogin() {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
-  document.getElementById("btnLogout")?.addEventListener("click", () => {
-  console.log("LOGOUT CLICK");
-});
+
+  // ✅ если вернулись с Яндекса — сохранить code и почистить URL
+  handleOAuthReturn();
 
   // Пропустить (локально)
   document.getElementById("btnDevSkip")?.addEventListener("click", () => {
@@ -323,17 +336,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Войти (в шапке) — только в local режиме
   document.getElementById("btnLoginTop")?.addEventListener("click", () => {
-    localStorage.removeItem("auth_mode"); // чтобы не оставаться в local
+    localStorage.removeItem("auth_mode");
     startYandexLogin();
   });
 
-  // Выйти (в шапке) — только для Яндекс-режима, но на всякий случай чистим всё
+  // Выйти
   document.getElementById("btnLogout")?.addEventListener("click", () => {
     if (!confirm("Выйти?")) return;
 
     localStorage.removeItem("yandex_oauth_code");
     localStorage.removeItem("yandex_oauth_state");
-    localStorage.removeItem("auth_mode"); // <- вот это и фиксит “не работает”
+    localStorage.removeItem("auth_mode");
     showAppOrLogin();
   });
 
