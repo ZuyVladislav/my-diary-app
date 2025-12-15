@@ -19,24 +19,12 @@
 
 <body class="min-h-screen bg-gradient-to-br from-indigo-50 via-slate-50 to-fuchsia-50 text-slate-900">
 
-  <!-- Overlay: загрузка/синхронизация -->
-  <div id="syncOverlay" class="hidden fixed inset-0 bg-white/70 backdrop-blur-sm z-50">
-    <div class="h-full flex items-center justify-center p-6">
-      <div class="glass rounded-2xl border border-white/60 shadow-soft p-6 max-w-md w-full">
-        <div class="text-lg font-semibold">Загрузка данных…</div>
-        <div id="syncOverlayText" class="mt-2 text-sm text-slate-600">
-          Пожалуйста, подожди пару секунд.
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Auth gate (СНАРУЖИ appRoot) -->
+  <!-- Auth gate -->
   <div id="authGate" class="max-w-6xl mx-auto px-4 py-8 hidden">
     <div class="glass rounded-2xl border border-white/60 shadow-soft p-6">
       <h2 class="text-2xl font-semibold">Вход</h2>
-      <p class="mt-2 text-slate-600">
-        Чтобы открыть дневник, войди через Яндекс (данные будут храниться в Яндекс.Диске, папка приложения).
+      <p class="mt-2 text-slate-600" id="gateText">
+        Чтобы открыть дневник, войди через Яндекс (данные будут храниться в папке приложения на Яндекс.Диске).
       </p>
 
       <div class="mt-4 flex flex-wrap gap-2">
@@ -49,6 +37,11 @@
           class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
           Пропустить (локально)
         </button>
+
+        <button id="btnRetrySync"
+          class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft hidden">
+          🔄 Повторить синхронизацию
+        </button>
       </div>
 
       <div class="mt-3 text-xs text-slate-500">
@@ -57,7 +50,7 @@
     </div>
   </div>
 
-  <!-- App (ИЗНАЧАЛЬНО СКРЫТ) -->
+  <!-- App -->
   <div id="appRoot" class="max-w-6xl mx-auto px-4 py-8 hidden">
 
     <!-- Header -->
@@ -79,6 +72,7 @@
           class="px-4 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-soft">
           ⬇️ Экспорт
         </button>
+
         <label class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft cursor-pointer">
           ⬆️ Импорт
           <input id="fileImport" type="file" accept="application/json" class="hidden">
@@ -214,7 +208,6 @@
         <button id="modalClose" type="button" class="px-3 py-1 rounded-xl hover:bg-white relative z-10">✖</button>
       </div>
 
-      <!-- Add area -->
       <div class="rounded-2xl border border-white/60 bg-white/55 p-4">
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
           <div class="lg:col-span-5">
@@ -260,17 +253,21 @@
   </div>
 
 <script>
-/** =========================================================
- *  НАСТРОЙКИ
- *  ========================================================= */
-const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
-const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/"; // ДОЛЖНО совпасть с OAuth настройкой
-const DISK_STATE_PATH = "app:/diary-state.json"; // app folder
-const STORAGE_KEY_LOCAL = "lesson_diary_v2_local";
+/** ============================
+ *  CONFIG
+ *  ============================ */
+const STORAGE_KEY = "lesson_diary_v2";
 
-/** =========================================================
- *  УТИЛИТЫ
- *  ========================================================= */
+// ТВОЁ приложение Яндекс.OAuth
+const CLIENT_ID = "78e32340ec07426eb89d20d4301fc224";
+const REDIRECT_URI = "https://zuyvladislav.github.io/my-diary-app/";
+
+// файл в папке приложения на Диске
+const DISK_STATE_PATH = "app:/diary-state.json";
+
+/** ============================
+ *  Utils + State
+ *  ============================ */
 function todayISO() {
   const d = new Date();
   const tzOff = d.getTimezoneOffset() * 60000;
@@ -293,63 +290,58 @@ function defaultState() {
     lessons: []
   };
 }
+function isValidState(x){
+  return !!x && typeof x === "object"
+    && Array.isArray(x.students)
+    && Array.isArray(x.books)
+    && Array.isArray(x.lessons);
+}
 
-/** =========================================================
- *  РЕЖИМЫ / ТОКЕН
- *  ========================================================= */
+/** ============================
+ *  Local mode
+ *  ============================ */
+function loadStateLocal() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return defaultState();
+  try {
+    const parsed = JSON.parse(raw);
+    return isValidState(parsed) ? parsed : defaultState();
+  } catch {
+    return defaultState();
+  }
+}
+function saveStateLocal(s) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+}
+
+/** ============================
+ *  Auth / Mode
+ *  ============================ */
 function getToken() {
   return localStorage.getItem("yandex_oauth_token") || "";
 }
-function isYandexLoggedIn() {
+function setToken(t) {
+  localStorage.setItem("yandex_oauth_token", t);
+}
+function clearToken() {
+  localStorage.removeItem("yandex_oauth_token");
+  localStorage.removeItem("yandex_user_display");
+  localStorage.removeItem("yandex_oauth_state");
+}
+function isYandexMode() {
   return !!getToken();
 }
 function isLocalMode() {
-  return localStorage.getItem("auth_mode") === "local";
+  return localStorage.getItem("auth_mode") === "local" && !isYandexMode();
 }
-function canEnterApp() {
-  return isYandexLoggedIn() || isLocalMode();
-}
-function setSyncOverlay(on, text="") {
-  const ov = document.getElementById("syncOverlay");
-  const tx = document.getElementById("syncOverlayText");
-  if (tx) tx.textContent = text || "Пожалуйста, подожди пару секунд.";
-  ov?.classList.toggle("hidden", !on);
+function getMode() {
+  if (isYandexMode()) return "yandex";
+  if (isLocalMode()) return "local";
+  return "none";
 }
 
-/** =========================================================
- *  LOCAL STORAGE (только для local-режима)
- *  ========================================================= */
-function loadStateLocal() {
-  const raw = localStorage.getItem(STORAGE_KEY_LOCAL);
-  if (!raw) return defaultState();
-  try { return JSON.parse(raw); } catch { return defaultState(); }
-}
-function saveStateLocal(s) {
-  localStorage.setItem(STORAGE_KEY_LOCAL, JSON.stringify(s));
-}
-
-/** =========================================================
- *  YANDEX OAUTH (implicit)
- *  ========================================================= */
 function randomState() {
   return crypto.getRandomValues(new Uint32Array(4)).join("-");
-}
-
-function startYandexLogin() {
-  const st = randomState();
-  localStorage.setItem("yandex_oauth_state", st);
-  sessionStorage.setItem("yandex_oauth_state", st);
-
-  const url = new URL("https://oauth.yandex.ru/authorize");
-  url.searchParams.set("response_type", "token");
-  url.searchParams.set("client_id", CLIENT_ID);
-  url.searchParams.set("redirect_uri", REDIRECT_URI);
-  url.searchParams.set("scope", "cloud_api:disk.app_folder");
-  url.searchParams.set("state", st);
-  url.searchParams.set("prompt", "login"); // чтобы можно было выбрать другой аккаунт
-
-  location.href = url.toString();
-  sessionStorage.setItem("yandex_oauth_state", st);
 }
 
 async function fetchYandexUser(token) {
@@ -360,28 +352,39 @@ async function fetchYandexUser(token) {
   return r.json();
 }
 
+function startYandexLogin() {
+  const state = randomState();
+  localStorage.setItem("yandex_oauth_state", state);
+
+  const url = new URL("https://oauth.yandex.ru/authorize");
+  url.searchParams.set("response_type", "token");
+  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("redirect_uri", REDIRECT_URI);
+  url.searchParams.set("scope", "cloud_api:disk.app_folder");
+  url.searchParams.set("state", state);
+  // можно попросить подтверждение (часто помогает со “сменить аккаунт”)
+  url.searchParams.set("force_confirm", "yes");
+
+  location.href = url.toString();
+}
+
 async function handleOAuthReturn() {
+  if (!location.hash) return;
+
   const hash = new URLSearchParams(location.hash.slice(1));
   const token = hash.get("access_token");
   const state = hash.get("state");
+  const savedState = localStorage.getItem("yandex_oauth_state");
 
-  if (!token) return;
-
-  // чистим URL сразу
+  // чистим URL
   history.replaceState({}, "", location.pathname);
 
-  const savedState =
-    localStorage.getItem("yandex_oauth_state") ||
-    sessionStorage.getItem("yandex_oauth_state");
+  if (!token) return;
+  if (!state || !savedState || state !== savedState) return;
 
-  // если savedState есть и не совпал — не логиним
-  // если savedState пропал (часто на других устройствах) — логиним всё равно
-  if (savedState && state && state !== savedState) return;
-
-  localStorage.setItem("yandex_oauth_token", token);
+  setToken(token);
   localStorage.removeItem("yandex_oauth_state");
-  sessionStorage.removeItem("yandex_oauth_state");
-  localStorage.removeItem("auth_mode");
+  localStorage.removeItem("auth_mode"); // если вошли — локал режим выключаем
 
   try {
     const me = await fetchYandexUser(token);
@@ -394,68 +397,24 @@ async function handleOAuthReturn() {
   }
 }
 
-/** =========================================================
- *  YANDEX DISK API (app folder) — ПРОСТО
- *  ========================================================= */
-async function diskApi(url, { method="GET", token, headers={}, body } = {}) {
+/** ============================
+ *  Yandex Disk API
+ *  ============================ */
+async function diskRequest(url, { method="GET", token, body } = {}) {
   const r = await fetch(url, {
     method,
-    headers: {
-      Authorization: `OAuth ${token}`,
-      ...headers
-    },
+    headers: { Authorization: `OAuth ${token}` },
     body
   });
-
-  if (!r.ok) {
-    let txt = "";
-    try { txt = await r.text(); } catch {}
-    throw new Error(`YandexDisk API ${method} ${r.status}: ${txt || r.statusText}`);
-  }
-
   return r;
-}
-
-async function loadStateFromDisk() {
-  const token = getToken();
-  if (!token) throw new Error("no token");
-
-  // 1) href на скачивание
-  const dl = await diskApi(
-    `https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(DISK_STATE_PATH)}`,
-    { token }
-  );
-
-  if (dl.status === 404) {
-    // файла нет — создаём дефолт и сохраняем
-    const s = defaultState();
-    await saveStateToDisk(s);
-    return s;
-  }
-  if (!dl.ok) throw new Error("download link failed");
-
-  const { href } = await dl.json();
-
-  // 2) скачать файл
-  const file = await fetch(href);
-  if (!file.ok) throw new Error("file fetch failed");
-
-  const json = await file.json();
-
-  // валидация
-  if (!json || typeof json !== "object") return defaultState();
-  if (!Array.isArray(json.students) || !Array.isArray(json.books) || !Array.isArray(json.lessons)) {
-    return defaultState();
-  }
-  return json;
 }
 
 async function saveStateToDisk(stateObj) {
   const token = getToken();
   if (!token) throw new Error("no token");
 
-  // 1) href на загрузку
-  const up = await diskApi(
+  // 1) upload href
+  const up = await diskRequest(
     `https://cloud-api.yandex.net/v1/disk/resources/upload?path=${encodeURIComponent(DISK_STATE_PATH)}&overwrite=true`,
     { token }
   );
@@ -463,92 +422,206 @@ async function saveStateToDisk(stateObj) {
 
   const { href } = await up.json();
 
-  // 2) PUT json
+  // 2) PUT (ВАЖНО: без Content-Type, чтобы не ловить CORS-preflight)
   const data = JSON.stringify(stateObj, null, 2);
-  const put = await fetch(href, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: data
-  });
+  const put = await fetch(href, { method: "PUT", body: data });
   if (!put.ok) throw new Error("put failed");
 }
 
-/** =========================================================
- *  UI: gate/app
- *  ========================================================= */
-function showAppOrLogin() {
-  const gate = document.getElementById("authGate");
-  const app  = document.getElementById("appRoot");
-  const dbg  = document.getElementById("authDebug");
+async function loadStateFromDisk() {
+  const token = getToken();
+  if (!token) throw new Error("no token");
+
+  const dl = await diskRequest(
+    `https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(DISK_STATE_PATH)}`,
+    { token }
+  );
+
+  if (dl.status === 404) {
+    const s = defaultState();
+    await saveStateToDisk(s); // создаст папку приложения + файл
+    return s;
+  }
+
+  if (!dl.ok) throw new Error("download link failed");
+  const { href } = await dl.json();
+
+  const file = await fetch(href);
+  if (!file.ok) throw new Error("file fetch failed");
+
+  const json = await file.json();
+  return isValidState(json) ? json : defaultState();
+}
+
+/** ============================
+ *  UI Gate
+ *  ============================ */
+function setView({ gate, app, debug, gateText, retryVisible }) {
+  const gateEl = document.getElementById("authGate");
+  const appEl  = document.getElementById("appRoot");
+  const dbgEl  = document.getElementById("authDebug");
+  const txtEl  = document.getElementById("gateText");
+  const retry  = document.getElementById("btnRetrySync");
+
+  gateEl.classList.toggle("hidden", !gate);
+  appEl.classList.toggle("hidden", !app);
+
+  if (dbgEl) dbgEl.textContent = debug || "";
+  if (txtEl && gateText) txtEl.textContent = gateText;
+
+  retry?.classList.toggle("hidden", !retryVisible);
 
   const btnLoginYandex = document.getElementById("btnLoginYandex");
   const btnDevSkip     = document.getElementById("btnDevSkip");
+  // если есть токен — кнопка “войти” не нужна
+  btnLoginYandex?.classList.toggle("hidden", isYandexMode());
+  // локальный режим можно всегда
+  btnDevSkip?.classList.toggle("hidden", false);
 
+  // topbar
   const btnLoginTop = document.getElementById("btnLoginTop");
   const btnLogout   = document.getElementById("btnLogout");
   const btnSwitch   = document.getElementById("btnSwitch");
   const who         = document.getElementById("whoami");
 
-  const logged = isYandexLoggedIn();
-  const local  = isLocalMode();
-  const enter  = canEnterApp();
-
-  gate?.classList.toggle("hidden", enter);
-  app?.classList.toggle("hidden", !enter);
-
-  // шапка
+  const logged = isYandexMode();
   btnLoginTop?.classList.toggle("hidden", logged);
   btnLogout?.classList.toggle("hidden", !logged);
   btnSwitch?.classList.toggle("hidden", !logged);
 
-  // whoami
   if (who) {
     who.classList.toggle("hidden", !logged);
     const name = localStorage.getItem("yandex_user_display") || "";
     who.textContent = name ? `Вы вошли как ${name}` : "Вы вошли";
   }
-
-  // debug
-  if (dbg) {
-    dbg.textContent = logged ? "yandex mode" : (local ? "local mode" : "not logged");
-  }
-
-  // gate buttons
-  btnLoginYandex?.classList.toggle("hidden", logged);
-  btnDevSkip?.classList.toggle("hidden", logged);
 }
 
-/** =========================================================
- *  ГЛОБАЛЬНЫЙ STATE + SAVE (простая логика)
- *  ========================================================= */
+/** ============================
+ *  Global state + saving
+ *  ============================ */
 let state = defaultState();
 
-// очередь сохранений (чтобы не было гонок при быстрых кликах)
-let saveQueue = Promise.resolve();
+let saveTimer = null;
+let savingNow = false;
 
-function persist() {
-  saveQueue = saveQueue
-    .then(async () => {
-      if (isYandexLoggedIn()) {
-        await saveStateToDisk(state);
-      } else {
-        saveStateLocal(state);
-      }
-    })
-    .catch((e) => {
-      console.error("Save failed:", e);
-      // в простом варианте просто молча не сохраняем, чтобы UI не падал
-    });
-  return saveQueue;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    if (savingNow) return;
+    savingNow = true;
+    try {
+      if (isYandexMode()) await saveStateToDisk(state);
+      else saveStateLocal(state);
+    } catch (e) {
+      alert("Не удалось сохранить данные. Проверь интернет (если работаешь через Яндекс.Диск).");
+    } finally {
+      savingNow = false;
+    }
+  }, 450);
 }
 
-/** =========================================================
- *  ДНЕВНИК (весь функционал в одной функции)
- *  ========================================================= */
+/** ============================
+ *  Boot
+ *  ============================ */
+document.addEventListener("DOMContentLoaded", async () => {
+  // обработать возврат OAuth
+  await handleOAuthReturn();
+
+  // wire buttons
+  document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
+  document.getElementById("btnLoginTop")?.addEventListener("click", startYandexLogin);
+
+  document.getElementById("btnDevSkip")?.addEventListener("click", () => {
+    localStorage.setItem("auth_mode", "local");
+    location.reload();
+  });
+
+  document.getElementById("btnRetrySync")?.addEventListener("click", () => location.reload());
+
+  document.getElementById("btnLogout")?.addEventListener("click", () => {
+    if (!confirm("Выйти?")) return;
+    clearToken();
+    localStorage.setItem("auth_mode", "local");
+    location.reload();
+  });
+
+  document.getElementById("btnSwitch")?.addEventListener("click", () => {
+    clearToken();
+    startYandexLogin();
+  });
+
+  // decide mode
+  const mode = getMode();
+
+  if (mode === "none") {
+    setView({
+      gate: true,
+      app: false,
+      debug: "not logged",
+      gateText: "Чтобы открыть дневник, войди через Яндекс (данные будут храниться в папке приложения на Яндекс.Диске). Либо открой локальный режим.",
+      retryVisible: false
+    });
+    return;
+  }
+
+  if (mode === "local") {
+    state = loadStateLocal();
+    setView({
+      gate: false,
+      app: true,
+      debug: "local mode",
+      retryVisible: false
+    });
+    bootDiary();
+    return;
+  }
+
+  // yandex mode: сначала синхра, потом пуск
+  setView({
+    gate: true,
+    app: false,
+    debug: "yandex mode: syncing…",
+    gateText: "Синхронизация с Яндекс.Диском…",
+    retryVisible: false
+  });
+
+  try {
+    // если имя не сохранено — попробуем подтянуть (не критично)
+    if (!localStorage.getItem("yandex_user_display")) {
+      try {
+        const me = await fetchYandexUser(getToken());
+        localStorage.setItem(
+          "yandex_user_display",
+          me.display_name || me.real_name || me.login || "Пользователь"
+        );
+      } catch {}
+    }
+
+    state = await loadStateFromDisk();
+
+    setView({
+      gate: false,
+      app: true,
+      debug: "yandex mode: ok",
+      retryVisible: false
+    });
+    bootDiary();
+  } catch (e) {
+    setView({
+      gate: true,
+      app: false,
+      debug: "yandex mode: sync failed",
+      gateText: "Не удалось загрузить данные с Яндекс.Диска. Проверь интернет и нажми «Повторить синхронизацию» (или открой локальный режим).",
+      retryVisible: true
+    });
+  }
+});
+
+/** ============================
+ *  Diary app
+ *  ============================ */
 function bootDiary() {
-  /** ============================
-   *  Elements
-   *  ============================ */
+  // Elements
   const studentSelect = document.getElementById("studentSelect");
   const bookSelect = document.getElementById("bookSelect");
   const dateInput = document.getElementById("dateInput");
@@ -571,9 +644,7 @@ function bootDiary() {
   const btnExport = document.getElementById("btnExport");
   const fileImport = document.getElementById("fileImport");
 
-  /** ============================
-   *  Render helpers
-   *  ============================ */
+  // Render helpers
   function renderSelect(selectEl, items, placeholderText="— выбери —") {
     selectEl.innerHTML = "";
     if (items.length === 0) {
@@ -635,9 +706,7 @@ function bootDiary() {
     return true;
   }
 
-  /** ============================
-   *  Inline editing for lessons
-   *  ============================ */
+  // Inline editing (lessons)
   let editingLessonId = null;
   let editingDraft = null;
 
@@ -659,7 +728,7 @@ function bootDiary() {
     const idx = state.lessons.findIndex(l=>l.id===editingLessonId);
     if (idx < 0) return;
     state.lessons[idx] = editingDraft;
-    persist();
+    scheduleSave();
     editingLessonId = null;
     editingDraft = null;
     renderLessons();
@@ -747,9 +816,7 @@ function bootDiary() {
     }
   }
 
-  /** ============================
-   *  Init
-   *  ============================ */
+  // init inputs
   dateInput.value = todayISO();
 
   function refreshAll() {
@@ -764,16 +831,13 @@ function bootDiary() {
   }
   refreshAll();
 
-  /** ============================
-   *  Add lesson
-   *  ============================ */
+  // add lesson
   lessonForm.addEventListener("submit", (e) => {
     e.preventDefault();
     if (state.students.length === 0 || state.books.length === 0) {
       alert("Сначала добавь учеников и учебники.");
       return;
     }
-
     const studentId = studentSelect.value || state.students[0]?.id;
     const bookId = bookSelect.value || state.books[0]?.id;
     const date = dateInput.value || todayISO();
@@ -783,16 +847,14 @@ function bootDiary() {
     if (!studentId || !bookId) { alert("Выбери ученика и учебник."); return; }
 
     state.lessons.push({ id: uid(), studentId, bookId, date, hw, stop });
-    persist();
+    scheduleSave();
 
     hwInput.value = "";
     stopInput.value = "";
     renderLessons();
   });
 
-  /** ============================
-   *  Lesson actions
-   *  ============================ */
+  // lesson actions
   lessonsTbody.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
@@ -805,7 +867,7 @@ function bootDiary() {
     if (act === "del") {
       if (!confirm("Удалить запись?")) return;
       state.lessons = state.lessons.filter(x => x.id !== id);
-      persist();
+      scheduleSave();
       if (editingLessonId === id) cancelEditLesson();
       else renderLessons();
       return;
@@ -829,9 +891,7 @@ function bootDiary() {
     if (key === "stop") editingDraft.stop = el.value;
   });
 
-  /** ============================
-   *  Filters
-   *  ============================ */
+  // filters
   filterStudent.addEventListener("change", renderLessons);
   filterDate.addEventListener("change", renderLessons);
   filterQuery.addEventListener("input", renderLessons);
@@ -841,7 +901,7 @@ function bootDiary() {
     if (state.lessons.length === 0) return;
     if (!confirm("Точно очистить всю историю занятий?")) return;
     state.lessons = [];
-    persist();
+    scheduleSave();
     cancelEditLesson();
   });
 
@@ -917,7 +977,6 @@ function bootDiary() {
 
       for (const s of state.students) {
         const isEditing = s.id === editingStudentId;
-
         const row = document.createElement("div");
         row.className = "rounded-2xl border border-white/60 bg-white/55 p-4";
 
@@ -1068,7 +1127,7 @@ function bootDiary() {
         return;
       }
       state.students.push({ id: uid(), name });
-      persist();
+      scheduleSave();
       modalNewName.value = "";
       renderModalList();
       refreshAll();
@@ -1080,7 +1139,7 @@ function bootDiary() {
       return;
     }
     state.books.push({ id: uid(), name, pdfName: newBookPdfName || "" });
-    persist();
+    scheduleSave();
 
     modalNewName.value = "";
     newBookPdfName = "";
@@ -1130,7 +1189,7 @@ function bootDiary() {
       if (!confirm("Удалить ученика?")) return;
 
       state.students = state.students.filter(x => x.id !== id);
-      persist();
+      scheduleSave();
       refreshAll();
       renderModalList();
       return;
@@ -1165,7 +1224,7 @@ function bootDiary() {
         if (dup) { alert("Такой ученик уже есть. Добавь номер (Соня 2)."); return; }
 
         s.name = newName;
-        persist();
+        scheduleSave();
         refreshAll();
 
         editingStudentId = null;
@@ -1183,7 +1242,7 @@ function bootDiary() {
       if (!confirm("Удалить учебник?")) return;
 
       state.books = state.books.filter(x => x.id !== id);
-      persist();
+      scheduleSave();
       refreshAll();
       renderModalList();
       return;
@@ -1221,7 +1280,7 @@ function bootDiary() {
         b.name = newName;
         b.pdfName = newPdf;
 
-        persist();
+        scheduleSave();
         refreshAll();
 
         editingBookId = null;
@@ -1239,9 +1298,7 @@ function bootDiary() {
   btnManageStudents.addEventListener("click", () => openModal("students"));
   btnManageBooks.addEventListener("click", () => openModal("books"));
 
-  /** ============================
-   *  Export / Import
-   *  ============================ */
+  // Export / Import
   btnExport.addEventListener("click", () => {
     const data = JSON.stringify(state, null, 2);
     const blob = new Blob([data], { type: "application/json" });
@@ -1263,14 +1320,10 @@ function bootDiary() {
     try {
       const text = await file.text();
       const imported = JSON.parse(text);
-
-      if (!imported || typeof imported !== "object") throw new Error("bad");
-      if (!Array.isArray(imported.students) || !Array.isArray(imported.books) || !Array.isArray(imported.lessons)) {
-        throw new Error("bad");
-      }
+      if (!isValidState(imported)) throw new Error("bad");
 
       state = imported;
-      persist();
+      scheduleSave();
       refreshAll();
       alert("Импорт выполнен ✅");
     } catch {
@@ -1280,74 +1333,6 @@ function bootDiary() {
     }
   });
 }
-
-/** =========================================================
- *  BOOTSTRAP (один раз)
- *  ========================================================= */
-document.addEventListener("DOMContentLoaded", async () => {
-  // 1) если вернулись от OAuth
-  await handleOAuthReturn();
-
-  // 2) обработчики кнопок (и в gate, и в шапке)
-  document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
-  document.getElementById("btnLoginTop")?.addEventListener("click", startYandexLogin);
-
-  document.getElementById("btnDevSkip")?.addEventListener("click", () => {
-    localStorage.setItem("auth_mode", "local");
-    location.reload(); // проще и надежнее
-  });
-
-  document.getElementById("btnLogout")?.addEventListener("click", () => {
-    if (!confirm("Выйти?")) return;
-    localStorage.removeItem("yandex_oauth_token");
-    localStorage.removeItem("yandex_user_display");
-    localStorage.removeItem("yandex_oauth_state");
-    // после выхода — пусть будет local режим (чтобы не «запиралось»)
-    localStorage.setItem("auth_mode", "local");
-    location.reload();
-  });
-
-  document.getElementById("btnSwitch")?.addEventListener("click", () => {
-    // просто заново логинимся (с prompt=login)
-    localStorage.removeItem("yandex_oauth_token");
-    localStorage.removeItem("yandex_user_display");
-    localStorage.removeItem("yandex_oauth_state");
-    startYandexLogin();
-  });
-
-  // 3) показать gate/app
-  showAppOrLogin();
-
-  // если ещё не выбрали режим и не залогинены — просто ждём (gate открыт)
-  if (!canEnterApp()) return;
-
-  // 4) загрузить данные (строго: в режиме входа — только Диск)
-  try {
-    if (isYandexLoggedIn()) {
-      setSyncOverlay(true, "Тяну данные с Яндекс.Диска…");
-      state = await loadStateFromDisk();
-      setSyncOverlay(false);
-    } else {
-      state = loadStateLocal();
-    }
-  } catch (e) {
-    console.error(e);
-    setSyncOverlay(false);
-
-    if (isYandexLoggedIn()) {
-  alert("Не удалось загрузить данные с Яндекс.Диска.\n\n" + (e?.message || e) + "\n\nОткрою локальную копию.");
-  // НЕ удаляем токен, просто откроем local как fallback
-  state = loadStateLocal();
-  bootDiary();
-  return;
-}
-
-    state = loadStateLocal();
-  }
-
-  // 5) запускаем дневник
-  bootDiary();
-});
 </script>
 
 </body>
