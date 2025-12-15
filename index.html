@@ -74,6 +74,10 @@
           ⬆️ Импорт
           <input id="fileImport" type="file" accept="application/json" class="hidden">
         </label>
+        <button id="btnLogout"
+  class="px-4 py-2 rounded-xl bg-white/80 border border-slate-200 hover:bg-white shadow-soft">
+  🚪 Выйти
+</button>
       </div>
     </div>
 
@@ -286,7 +290,14 @@ function showAppOrLogin() {
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnLoginYandex")?.addEventListener("click", startYandexLogin);
 
-  // временно: пропустить вход (чтобы тестить дневник)
+  document.getElementById("btnLogout")?.addEventListener("click", () => {
+    if (!confirm("Выйти из аккаунта?")) return;
+
+    localStorage.removeItem("yandex_oauth_code");
+    localStorage.removeItem("yandex_oauth_state");
+    showAppOrLogin();
+  });
+
   document.getElementById("btnDevSkip")?.addEventListener("click", () => {
     localStorage.setItem("yandex_oauth_code", "DEV_LOCAL");
     showAppOrLogin();
